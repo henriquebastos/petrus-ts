@@ -8,6 +8,7 @@ import type { Arc, Transition } from "./transition.ts";
 /** One input place that holds fewer tokens than the transition consumes. */
 export type Shortfall = { readonly place: PlaceId; readonly required: number; readonly available: number };
 
+/** Why a transition did not fire: the input places that hold too few tokens. */
 export type NotEnabled = {
 	readonly kind: "not-enabled";
 	readonly transition: TransitionId;
@@ -21,6 +22,7 @@ export function shortfalls(transition: Transition, marking: Marking): readonly S
 		.filter((shortfall) => shortfall.available < shortfall.required);
 }
 
+/** True when every input place holds at least the tokens the transition consumes. */
 export function isEnabled(transition: Transition, marking: Marking): boolean {
 	return shortfalls(transition, marking).length === 0;
 }

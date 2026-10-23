@@ -28,3 +28,18 @@ test("a new runtime export fails the API check until the report is updated", asy
 	);
 	expect((await runScript(script, [], root)).exitCode).toBe(0);
 });
+
+test("an exported name without a JSDoc line fails the API check, even with --update", async () => {
+	const root = sandbox({
+		"tsconfig.base.json": "tsconfig.base.json",
+		packages: "packages",
+		"packages/net/src/undocumented.ts": "fixtures/api/undocumented.ts",
+	});
+	appendFileSync(
+		join(root, "packages/net/src/index.ts"),
+		readFileSync(join(repoRoot, "fixtures/api/net-index-undocumented-tail.ts")),
+	);
+	const run = await runScript(script, ["--update"], root);
+	expect(run.exitCode).toBe(1);
+	expect(run.stdout + run.stderr).toContain('(ae-undocumented) Missing documentation for "retryLimit".');
+});

@@ -1,9 +1,11 @@
 [
-	"2 BlockStatement {} CompileError",
-	"3 ConditionalExpression false Killed",
-	"3 ConditionalExpression true Killed",
-	"3 EqualityOperator available < required Killed",
-	"3 EqualityOperator available > required Survived",
-	"7 BlockStatement {} CompileError",
-	"8 ArithmeticOperator count / 2 NoCoverage"
+	"guard.ts:2 BlockStatement {} CompileError",
+	"guard.ts:3 ConditionalExpression false Killed",
+	"guard.ts:3 ConditionalExpression true Killed",
+	"guard.ts:3 EqualityOperator available < required Killed",
+	"guard.ts:3 EqualityOperator available > required Survived",
+	"guard.ts:7 BlockStatement {} CompileError",
+	"guard.ts:8 ArithmeticOperator count / 2 NoCoverage",
+	"half.ts:2 BlockStatement {} CompileError",
+	"half.ts:3 ArithmeticOperator count * 2 Killed"
 ]

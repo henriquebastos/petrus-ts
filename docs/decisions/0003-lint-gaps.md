@@ -13,11 +13,13 @@ His rule files (`default-exports`, `import-type`, `interface-extends`, `throwing
 
 ## Decision
 
-Each row is enforced in `eslint.config.js`, `tsconfig.base.json` or `.dependency-cruiser.cjs`, and has a planted defect in `fixtures/`.
+Each enforced row is set in `eslint.config.js`, `tsconfig.base.json` or `.dependency-cruiser.cjs`, and has a planted defect
+in `fixtures/`. Three rows have no defect: the `_` ignore patterns relax a rule, and `no-await-in-loop` and
+`noPropertyAccessFromIndexSignature` stay off.
 
 | Gap                                                                | Decision                                                                                                    | Pocock basis                                                                                                                |
 | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `if (timeoutMs)` is false for `0`                                  | `strict-boolean-expressions` for numbers only. Strings and objects may be tested for truth.                 | His book writes `if (username)`; he has no position on the rule. Numbers are where the bug is: a count or a timeout of `0`. |
+| `if (timeoutMs)` is false for `0`                                  | `strict-boolean-expressions` with numbers banned. Strings and nullable objects may be tested for truth.     | His book writes `if (username)`; he has no position on the rule. Numbers are where the bug is: a count or a timeout of `0`. |
 | A `switch` can miss a case                                         | `switch-exhaustiveness-check`. In a `default`, write `value satisfies never`.                               | "'satisfies never' is SO GOOD for exhaustiveness checking."                                                                 |
 | `JSON.parse(body) as T` and `as unknown as T` pass                 | `no-unsafe-type-assertion`. Parse untrusted input with a schema (Zod).                                      | "`as` lets you lie to TypeScript"; use Zod for input you do not control.                                                    |
 | `{ ... } as Arc` with a missing field passes                       | `consistent-type-assertions` with `objectLiteralTypeAssertions: "never"`. Use an annotation or `satisfies`. | `as` as the default annotation is "almost certainly wrong".                                                                 |

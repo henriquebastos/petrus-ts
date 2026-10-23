@@ -13,22 +13,22 @@ export type Arc = {
     readonly weight: number;
 };
 
-// @public (undocumented)
+// @public
 export const emptyMarking: Marking;
 
-// @public (undocumented)
+// @public
 export type Err<TError> = {
     readonly ok: false;
     readonly error: TError;
 };
 
-// @public (undocumented)
+// @public
 export function err<TError>(error: TError): Err<TError>;
 
 // @public
 export function fire(transition: Transition, marking: Marking): Result<Marking, NotEnabled>;
 
-// @public (undocumented)
+// @public
 export function isEnabled(transition: Transition, marking: Marking): boolean;
 
 // @public
@@ -37,20 +37,20 @@ export type Marking = Readonly<Record<PlaceId, number>>;
 // @public
 export function netProblems(transitions: readonly Transition[]): readonly string[];
 
-// @public (undocumented)
+// @public
 export type NotEnabled = {
     readonly kind: "not-enabled";
     readonly transition: TransitionId;
     readonly shortfalls: readonly Shortfall[];
 };
 
-// @public (undocumented)
+// @public
 export type Ok<TValue> = {
     readonly ok: true;
     readonly value: TValue;
 };
 
-// @public (undocumented)
+// @public
 export function ok<TValue>(value: TValue): Ok<TValue>;
 
 // @public
@@ -58,7 +58,7 @@ export type PlaceId = string & {
     readonly __brand: "PlaceId";
 };
 
-// @public (undocumented)
+// @public
 export function placeId(name: string): PlaceId;
 
 // @public
@@ -77,7 +77,7 @@ export function shortfalls(transition: Transition, marking: Marking): readonly S
 // @public
 export function tokensAt(marking: Marking, place: PlaceId): number;
 
-// @public (undocumented)
+// @public
 export type Transition = {
     readonly id: TransitionId;
     readonly inputs: readonly Arc[];
@@ -89,7 +89,7 @@ export type TransitionId = string & {
     readonly __brand: "TransitionId";
 };
 
-// @public (undocumented)
+// @public
 export function transitionId(name: string): TransitionId;
 
 // (No @packageDocumentation comment for this package)

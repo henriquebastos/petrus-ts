@@ -18,5 +18,17 @@
 	{
 		"rule": "no-circular",
 		"from": "packages/runtime/src/a.ts"
+	},
+	{
+		"rule": "runtime-imports-only-lower-layers",
+		"from": "packages/runtime/src/upward-by-name.ts"
+	},
+	{
+		"rule": "net-is-pure",
+		"from": "packages/net/src/npm.ts"
+	},
+	{
+		"rule": "not-to-unresolvable",
+		"from": "packages/runtime/src/missing.ts"
 	}
 ]

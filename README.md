@@ -32,18 +32,19 @@ pnpm test          # unit and property tests with coverage
 pnpm test:gates    # planted defects: each gate must still fail on its fixture
 pnpm inspect       # when a change feels done: tests, then Fallow CRAP and clones on the changed files
 pnpm periodic      # on demand: Stryker mutation testing, report in reports/mutation/
-pnpm format        # format with Biome
+pnpm format        # format code with Biome and fix Markdown with markdownlint
 ```
 
 `pnpm feedback` runs, in order: Biome format check, `tsc` 7 on each package and on the tests, ESLint,
-dependency-cruiser, knip, markdownlint, Vitest with coverage, and the gate tests.
+dependency-cruiser with the entry-graph budgets, the api-extractor reports, knip, markdownlint,
+Vitest with coverage, and the gate tests.
 
 `pnpm inspect` runs the tests, then `fallow audit` (config in `.fallowrc.json`) on the files changed since the
 merge-base with `main`, uncommitted files included. It fails when the change brings a function to CRAP 30 or more,
 with coverage read from `coverage/coverage-final.json`, and when duplication exceeds 0.1% of the code. knip and
 dependency-cruiser keep dead code and architecture, so the audit skips those parts.
 
-`pnpm periodic` runs StrykerJS on `packages/*/src` with no score gate. It is a diagnostic: read the surviving mutants.
+`pnpm periodic` runs StrykerJS on `packages/net/src` and `packages/runtime/src` with no score gate. It is a diagnostic: read the surviving mutants.
 
 ## TypeScript versions
 

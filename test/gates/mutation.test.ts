@@ -11,7 +11,7 @@ const mutant = z.object({
 });
 const mutationReport = z.object({ files: z.record(z.string(), z.object({ mutants: z.array(mutant) })) });
 
-test("Stryker reports the untested boundary Survived and the untested function NoCoverage", async () => {
+test("Stryker reports the untested boundary Survived, the untested function NoCoverage, and kills a net mutant from a runtime test", async () => {
 	const root = sandbox({
 		"stryker.config.json": "stryker.config.json",
 		"vitest.config.ts": "vitest.config.ts",
@@ -22,13 +22,22 @@ test("Stryker reports the untested boundary Survived and the untested function N
 		"packages/net/package.json": "packages/net/package.json",
 		"packages/net/src/guard.ts": "fixtures/mutation/guard.ts",
 		"packages/net/test/guard.test.ts": "fixtures/mutation/guard.test.ts",
+		"packages/net/src/index.ts": "fixtures/mutation/alias/index.ts",
+		"packages/net/src/half.ts": "fixtures/mutation/alias/half.ts",
+		"packages/runtime/package.json": "packages/runtime/package.json",
+		"packages/runtime/node_modules": "packages/runtime/node_modules",
+		"packages/runtime/test/half.test.ts": "fixtures/mutation/alias/half.test.ts",
 	});
 	const run = await runTool("stryker", ["run", "--reporters", "json"], root);
 	expect(run.exitCode, run.stdout + run.stderr).toBe(0);
 	const report = readJson(join(root, "reports", "mutation", "mutation.json"), mutationReport);
-	const mutants = report.files["packages/net/src/guard.ts"]?.mutants ?? [];
-	const outcomes = mutants
-		.map((entry) => `${String(entry.location.start.line)} ${entry.mutatorName} ${entry.replacement} ${entry.status}`)
+	const outcomes = ["packages/net/src/guard.ts", "packages/net/src/half.ts"]
+		.flatMap((file) =>
+			(report.files[file]?.mutants ?? []).map(
+				(entry) =>
+					`${file.slice("packages/net/src/".length)}:${String(entry.location.start.line)} ${entry.mutatorName} ${entry.replacement} ${entry.status}`,
+			),
+		)
 		.sort();
 	expect(outcomes).toStrictEqual(
 		readJson(join(repoRoot, "fixtures", "mutation", "expected.json"), z.array(z.string())),

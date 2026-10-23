@@ -8,7 +8,7 @@
 	},
 	"scripts": {
 		"feedback": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run lint:deps && pnpm run lint:api && pnpm run lint:dead && pnpm run lint:md && pnpm run test && pnpm run test:gates",
-		"format": "biome format --write .",
+		"format": "biome format --write . && markdownlint-cli2 --fix",
 		"format:check": "biome format .",
 		"inspect": "pnpm run test && fallow audit",
 		"lint": "eslint .",

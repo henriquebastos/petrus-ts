@@ -6,6 +6,7 @@ import type { PlaceId } from "./ids.ts";
  */
 export type Marking = Readonly<Record<PlaceId, number>>;
 
+/** The marking with no tokens on any place. */
 export const emptyMarking: Marking = {};
 
 /** Reads only the marking's own keys: a place named `constructor` or `__proto__` must not see an inherited property. */

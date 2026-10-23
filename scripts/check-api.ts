@@ -42,7 +42,13 @@ function checkPackage(name: string): boolean {
 			docModel: { enabled: false },
 			dtsRollup: { enabled: false },
 			tsdocMetadata: { enabled: false },
-			messages: { extractorMessageReporting: { "ae-missing-release-tag": { logLevel: ExtractorLogLevel.None } } },
+			messages: {
+				extractorMessageReporting: {
+					"ae-missing-release-tag": { logLevel: ExtractorLogLevel.None },
+					// The style guide asks for a JSDoc line on each exported name; this makes it a check.
+					"ae-undocumented": { logLevel: ExtractorLogLevel.Error, addToApiReportFile: false },
+				},
+			},
 		},
 		configObjectFullPath: undefined,
 		packageJsonFullPath: join(packageFolder, "package.json"),

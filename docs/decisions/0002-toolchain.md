@@ -26,7 +26,7 @@ Choices made by trial:
   with a 47-line local plugin for `no-restricted-syntax` and the eslint-comments plugin loaded through its JS plugin
   interface, which oxlint marks alpha and outside semver. oxlint also obeys `oxlint-disable` comments, a new bypass that
   needs its own rule, and the eslint-comments plugin crashes under oxlint on a broken directive on line 1.
-  oxlint saves about 1.4 s per `feedback`. The TS 6 alias stays for dependency-cruiser and api-extractor in any case.
+  oxlint saves about 1.4 s per `feedback`. The TS 6 alias stays in any case for typescript-eslint, dependency-cruiser and the Stryker TypeScript checker.
   Revisit when oxlint JS plugins are stable, or when typescript-eslint no longer supports the TypeScript we use.
 - **Vitest 4.1.12, not 5.0.5.** StrykerJS vitest-runner 10.0.0 builds test-name filters that Vitest 5 does not match.
   Every mutant then runs no test and is reported Survived, with exit code 0. Move to Vitest 5 when the runner supports it;
@@ -56,3 +56,5 @@ Choices made by trial:
 - Stryker uses a fixed fast-check seed and an alias to the mutated `@petrus/net` (`vitest.mutation.config.ts`).
   Without them it silently skips the property tests or loads unmutated code.
 - Every gate has a planted defect in `fixtures/` and a test in `test/gates/`. A gate that changes must keep its fixture failing.
+- The crash-cut property models a crash before a commit lands. A commit that lands and then loses its reply
+  (the step runs again after the reopen) is not modelled yet.

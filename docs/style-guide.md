@@ -99,7 +99,7 @@ Untrusted input (a webhook body, a stored document, tool output) is `unknown` un
 
 ```ts
 // test/gates/dependencies.test.ts
-const output = cruiseOutput.parse(JSON.parse(run.stdout)); // a Zod schema, not `as CruiseOutput`
+return cruiseOutput.parse(JSON.parse(run.stdout)); // a Zod schema, not `as CruiseOutput`
 ```
 
 Use an annotation or `satisfies` for literals, never `{ ... } as T`.
@@ -123,7 +123,8 @@ return marking[place] ?? 0;
 
 `if (timeoutMs)` is false for `0`. Compare: `if (timeoutMs !== undefined)`.
 
-- Enforced by: `strict-boolean-expressions` (numbers only).
+- Enforced by: `strict-boolean-expressions`, with numbers banned and strings allowed. The rule's defaults also reject
+  `any`, nullable booleans, and objects that are always truthy.
 - Pattern: TypeScript Handbook, narrowing; decision 0003.
 
 ### Every suppression has a reason
@@ -159,7 +160,7 @@ Change concurrency only with a scheduler property test (see "Tests").
 - Relative imports name the `.ts` file. Node runs the source.
 - A package root re-exports its names one by one; no `export *`.
 - Exported and top-level functions declare their return type.
-- Files use kebab-case.
+- Files use kebab-case (a review rule: no tool checks file names).
 
 Enforced by: `no-restricted-syntax`, `no-restricted-imports`, `consistent-type-imports`, `no-import-type-side-effects`,
 `explicit-function-return-type`, `explicit-module-boundary-types`, knip.
@@ -188,5 +189,6 @@ A package imports only packages below it, and only through their root.
 ## Readability
 
 - Cyclomatic complexity at most 10 and nesting at most 4. Split the function when a check fails.
-- Comments say why, or state an invariant the code cannot show. A JSDoc line on an exported name states its contract.
+- Comments say why, or state an invariant the code cannot show. A JSDoc line on an exported name states its contract;
+  api-extractor (`ae-undocumented`, in `pnpm lint:api`) fails a package root export without one.
 - Biome formats the code: tabs, line width 120.

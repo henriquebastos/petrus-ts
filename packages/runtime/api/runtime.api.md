@@ -36,22 +36,22 @@ export type Occurrence = {
     readonly at: number;
 };
 
-// @public (undocumented)
+// @public
 export type Runtime = {
     readonly step: (transition: TransitionId) => Promise<Result<InstanceState, StepFailure>>;
 };
 
-// @public (undocumented)
+// @public
 export type RuntimeOptions = {
     readonly transitions: readonly Transition[];
     readonly store: InstanceStore;
     readonly clock: Clock;
 };
 
-// @public (undocumented)
+// @public
 export type StepFailure = NotEnabled | UnknownTransition;
 
-// @public (undocumented)
+// @public
 export type UnknownTransition = {
     readonly kind: "unknown-transition";
     readonly transition: TransitionId;

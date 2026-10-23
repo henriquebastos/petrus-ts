@@ -4,15 +4,19 @@ import type { InstanceState, InstanceStore } from "./instance.ts";
 import type { Clock } from "./seams.ts";
 import { createSerialQueue } from "./serial-queue.ts";
 
+/** The step named a transition that is not in the net. */
 export type UnknownTransition = { readonly kind: "unknown-transition"; readonly transition: TransitionId };
 
+/** The expected ways a step can fail. A store failure is not one of them: it throws. */
 export type StepFailure = NotEnabled | UnknownTransition;
 
+/** One running net instance. */
 export type Runtime = {
 	/** Fires one transition and commits the new marking and its occurrence together. Steps run one at a time. */
 	readonly step: (transition: TransitionId) => Promise<Result<InstanceState, StepFailure>>;
 };
 
+/** What a runtime needs: the net, the store of its instance, and the clock that stamps occurrences. */
 export type RuntimeOptions = {
 	readonly transitions: readonly Transition[];
 	readonly store: InstanceStore;
