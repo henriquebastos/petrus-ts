@@ -1,0 +1,9 @@
+[
+	"2 BlockStatement {} CompileError",
+	"3 ConditionalExpression false Killed",
+	"3 ConditionalExpression true Killed",
+	"3 EqualityOperator available < required Killed",
+	"3 EqualityOperator available > required Survived",
+	"7 BlockStatement {} CompileError",
+	"8 ArithmeticOperator count / 2 NoCoverage"
+]
