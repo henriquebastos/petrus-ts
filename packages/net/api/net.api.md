@@ -34,6 +34,9 @@ export function isEnabled(transition: Transition, marking: Marking): boolean;
 // @public
 export type Marking = Readonly<Record<PlaceId, number>>;
 
+// @public
+export function netProblems(transitions: readonly Transition[]): readonly string[];
+
 // @public (undocumented)
 export type NotEnabled = {
     readonly kind: "not-enabled";
@@ -71,7 +74,7 @@ export type Shortfall = {
 // @public
 export function shortfalls(transition: Transition, marking: Marking): readonly Shortfall[];
 
-// @public (undocumented)
+// @public
 export function tokensAt(marking: Marking, place: PlaceId): number;
 
 // @public (undocumented)

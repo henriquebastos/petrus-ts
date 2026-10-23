@@ -6,6 +6,7 @@ import { modelProperty } from "../../packages/net/test/model-property.ts";
 test("the model property finds the planted off-by-one, shrinks it, and replays it from the seed", () => {
 	const first = fc.check(modelProperty(fireOffByOne));
 	expect(first.failed).toBe(true);
+	expect(String(first.errorInstance)).toMatch(/fire said ok=|fire gave/);
 	expect(first.numShrinks).toBeGreaterThan(0);
 	const replayed = fc.check(modelProperty(fireOffByOne), { seed: first.seed });
 	expect(replayed.failed).toBe(true);

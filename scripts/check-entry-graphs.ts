@@ -13,8 +13,8 @@ type Budget = { readonly maxFiles: number; readonly forbid: readonly RegExp[] };
 
 /** Budgets are the current graph sizes. Raise one on purpose, in the same change that grows the graph. */
 const budgets: Readonly<Record<string, Budget>> = {
-	"packages/net/src/index.ts": { maxFiles: 5, forbid: [/^node:/, /node_modules\//, /^packages\/(?!net\/)/] },
-	"packages/runtime/src/index.ts": { maxFiles: 8, forbid: [/^node:/] },
+	"packages/net/src/index.ts": { maxFiles: 6, forbid: [/^node:/, /node_modules\//, /^packages\/(?!net\/)/] },
+	"packages/runtime/src/index.ts": { maxFiles: 9, forbid: [/^node:/] },
 };
 
 const cruiseOutput = z.object({

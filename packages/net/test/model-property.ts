@@ -11,6 +11,11 @@ type Model = { counts: Map<PlaceId, number> };
 
 type Real = { marking: Marking };
 
+/** The model's own read of a marking, kept apart from `tokensAt` so a bug there cannot agree with itself. */
+function ownCount(marking: Marking, place: PlaceId): number {
+	return new Map(Object.entries(marking)).get(place) ?? 0;
+}
+
 function modelEnables(model: Model, transition: Transition): boolean {
 	return transition.inputs.every((arc) => {
 		const required = transition.inputs
@@ -54,7 +59,7 @@ class FireCommand implements fc.Command<Model, Real> {
 		modelFire(model, this.transition);
 		real.marking = fired.value;
 		for (const place of places) {
-			const actual = real.marking[place] ?? 0;
+			const actual = ownCount(real.marking, place);
 			const expected = model.counts.get(place) ?? 0;
 			if (actual !== expected) {
 				throw new Error(`place ${place}: fire gave ${String(actual)}, the model gave ${String(expected)}`);
@@ -72,7 +77,7 @@ export function modelProperty(fireUnderTest: Fire): fc.IProperty<[Marking, Itera
 	const command = transitionArbitrary.map((transition) => new FireCommand(fireUnderTest, transition));
 	return fc.property(markingArbitrary, fc.commands([command], { maxCommands: 30 }), (initial, commands) => {
 		const setup = (): { model: Model; real: Real } => ({
-			model: { counts: new Map(places.map((place) => [place, initial[place] ?? 0])) },
+			model: { counts: new Map(places.map((place) => [place, ownCount(initial, place)])) },
 			real: { marking: initial },
 		});
 		fc.modelRun(setup, commands);

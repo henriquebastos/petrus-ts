@@ -1,7 +1,7 @@
 /**
  * Package layers, lowest first: net <- runtime <- hamsterdan <- hamsterdan-github <- hamsterdan-cli.
  * A package imports only packages below it, and only through their root (`src/index.ts`).
- * Type-only edges count for cycles. Decision: docs/decisions/0001-toolchain.md.
+ * Type-only edges count for cycles. Decision: docs/decisions/0002-toolchain.md.
  */
 const layers = ["net", "runtime", "hamsterdan", "hamsterdan-github", "hamsterdan-cli"];
 

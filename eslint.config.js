@@ -1,5 +1,5 @@
 // Lint rules for Petrus. Each rule beyond the shared configs names the gap it closes
-// (docs/decisions/0002-lint-gaps.md) or the house rule it enforces (docs/style-guide.md).
+// (docs/decisions/0003-lint-gaps.md) or the house rule it enforces (docs/style-guide.md).
 import js from "@eslint/js";
 import comments from "@eslint-community/eslint-plugin-eslint-comments/configs";
 import tseslint from "typescript-eslint";
@@ -34,6 +34,12 @@ const ambientWorld = {
 		"error",
 		...houseSyntax,
 		{ selector: "NewExpression[callee.name='Date']", message: "Take time from the injected Clock." },
+		{ selector: "CallExpression[callee.name='Date']", message: "Take time from the injected Clock." },
+		{
+			selector:
+				"MemberExpression[object.name='globalThis'][property.name=/^(Date|Math|performance|setTimeout|setInterval|setImmediate)$/]",
+			message: "Take time, randomness and timers from injected seams.",
+		},
 	],
 };
 

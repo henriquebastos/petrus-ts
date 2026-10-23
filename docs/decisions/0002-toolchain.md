@@ -37,7 +37,7 @@ Choices made by trial:
 - **API surface: api-extractor reports in `packages/*/api/`.** A snapshot of `Object.keys` missed new type-only exports
   and changed signatures. Accept an intended API change with `pnpm lint:api --update`.
 - **Entry-graph budgets** (`scripts/check-entry-graphs.ts`, run by `lint:deps`), as Pi does: `net` reaches at most
-  5 files and no `node:` or npm module; `runtime` at most 8 files and no `node:` module.
+  6 files and no `node:` or npm module; `runtime` at most 9 files and no `node:` module.
 - **Compiler flags:** `isolatedDeclarations` and `declaration` on for the packages (root tooling opts out);
   `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noFallthroughCasesInSwitch` on.
 - **Rejected: type-coverage.** ESLint already fails the planted `as any`, and `--strict` fails the real code on

@@ -2,8 +2,11 @@ import fc from "fast-check";
 import type { Arc, Marking, PlaceId, Transition } from "../src/index.ts";
 import { placeId, transitionId } from "../src/index.ts";
 
-/** A small pool of places, so generated transitions often share places and interact. */
-export const places: readonly PlaceId[] = ["a", "b", "c", "d"].map(placeId);
+/**
+ * A small pool of places, so generated transitions often share places and interact. Two names are also
+ * properties of every plain object, so a marking that reads inherited properties fails the properties.
+ */
+export const places: readonly PlaceId[] = ["a", "b", "constructor", "__proto__"].map(placeId);
 
 const placeArbitrary: fc.Arbitrary<PlaceId> = fc.constantFrom(...places);
 

@@ -1,5 +1,5 @@
 import type { NotEnabled, Result, Transition, TransitionId } from "@petrus/net";
-import { err, fire, ok } from "@petrus/net";
+import { err, fire, netProblems, ok } from "@petrus/net";
 import type { InstanceState, InstanceStore } from "./instance.ts";
 import type { Clock } from "./seams.ts";
 import { createSerialQueue } from "./serial-queue.ts";
@@ -19,8 +19,13 @@ export type RuntimeOptions = {
 	readonly clock: Clock;
 };
 
+/** Builds a runtime for one instance. A net with problems (see `netProblems`) is a bug, so it throws. */
 export function createRuntime(options: RuntimeOptions): Runtime {
 	const { transitions, store, clock } = options;
+	const problems = netProblems(transitions);
+	if (problems.length > 0) {
+		throw new Error(`invalid net: ${problems.join("; ")}`);
+	}
 	const byId = new Map(transitions.map((transition) => [transition.id, transition]));
 	const serial = createSerialQueue();
 

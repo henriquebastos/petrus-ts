@@ -24,7 +24,7 @@ describe("gates that skip fixtures/, run on a sandbox copy of the real config", 
 		expect(rules).toStrictEqual(new Set(["MD001", "MD012", "MD022"]));
 	});
 
-	test("the coverage threshold fails when a branch has no test", async () => {
+	test("each coverage threshold fails when a branch and a function have no test", async () => {
 		const root = sandbox({
 			"vitest.config.ts": "vitest.config.ts",
 			"packages/x/src/branch.ts": "fixtures/coverage/branch.ts",
@@ -32,8 +32,11 @@ describe("gates that skip fixtures/, run on a sandbox copy of the real config", 
 		});
 		const run = await runTool("vitest", ["run", "--coverage"], root);
 		expect(run.exitCode).toBe(1);
-		expect(run.stdout + run.stderr).toMatch(
-			/Coverage for branches \([\d.]+%\) does not meet global threshold \(85%\)/,
-		);
+		const failed = [
+			...(run.stdout + run.stderr).matchAll(
+				/Coverage for (\w+) \([\d.]+%\) does not meet global threshold \((\d+)%\)/g,
+			),
+		].map((match) => `${match[1] ?? ""} ${match[2] ?? ""}`);
+		expect(new Set(failed)).toStrictEqual(new Set(["lines 90", "functions 90", "statements 90", "branches 85"]));
 	});
 });

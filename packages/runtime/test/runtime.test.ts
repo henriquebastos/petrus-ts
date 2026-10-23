@@ -37,6 +37,13 @@ describe("createRuntime, examples", () => {
 		expect(result).toStrictEqual({ ok: false, error: { kind: "unknown-transition", transition: "missing" } });
 	});
 
+	test("refuses a net with problems, which is a bug in the caller, and names every problem", () => {
+		const broken = [...contested, ...contested.slice(0, 2)];
+		expect(() =>
+			createRuntime({ transitions: broken, store: createDisk(initialState).open(), clock: { now: () => 0 } }),
+		).toThrow(new Error("invalid net: take-left: id used 2 times; take-right: id used 2 times"));
+	});
+
 	test("a failed commit does not block the next step", async () => {
 		const disk = createDisk(initialState);
 		const runtime = createRuntime({

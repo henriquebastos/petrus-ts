@@ -15,7 +15,7 @@ export type Clock = {
     readonly now: () => number;
 };
 
-// @public (undocumented)
+// @public
 export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
