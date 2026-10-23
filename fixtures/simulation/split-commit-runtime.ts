@@ -1,6 +1,6 @@
 // Planted defect: the marking and the occurrence log land in two commits, so a crash between them splits them.
-import type { Result, TransitionId } from "../../packages/net/src/index.ts";
-import { err, fire, ok } from "../../packages/net/src/index.ts";
+import type { Result, TransitionId } from "../../packages/petri-net/src/index.ts";
+import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
 import type { InstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
 
 export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {

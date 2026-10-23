@@ -9,15 +9,15 @@ that covers the area you change.
 - A behaviour change comes with a test that fails without it. Prefer a fast-check property when a rule holds for all inputs.
 - Run `pnpm format` to format. Do not format by hand.
 - A change to a package's public API fails `lint:api`. If the change is intended, run `pnpm lint:api --update` and commit the report diff in `packages/*/api/`.
-- Run `pnpm inspect` when a change feels done (CRAP and duplication on changed files). Run `pnpm periodic` (mutation testing) after a change to `net` or `runtime` logic, and read the surviving mutants.
+- Run `pnpm inspect` when a change feels done (CRAP and duplication on changed files). Run `pnpm periodic` (mutation testing) after a change to `petri-net` or `runtime` logic, and read the surviving mutants.
 
 ## Rules that are easy to break
 
 - `fixtures/` holds planted defects. Each file must keep failing its gate. Do not fix, format or lint-clean it.
   When you change a gate config, update the fixture and its expected output in the same change.
-- `packages/net` stays pure: no Node builtins, no npm packages, no time, no randomness.
+- `packages/petri-net` stays pure: no Node builtins, no npm packages, no time, no randomness.
 - Code in `packages/*/src` gets time, timers and randomness from injected seams, never from `Date`, `setTimeout` or `Math.random`.
-- Import another package only through its root (`@petrus/net`), and only from a lower layer.
+- Import another package only through its root (`@petrus/petri-net`), and only from a lower layer.
 - Every `eslint-disable` and `@ts-expect-error` has a reason on the same line, after `--`.
 - Parse untrusted input with a Zod schema. Do not cast it with `as`.
 - Tests pass typed fakes in; do not use `vi.mock`.

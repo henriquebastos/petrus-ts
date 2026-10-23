@@ -1,7 +1,7 @@
 /**
  * Entry points are cost contracts (Pi scripts/check-entry-graphs.mjs). Each package root states how many
  * workspace files its value-import graph may reach and which targets it must never reach, so one stray
- * re-export that drags a storage adapter into `net` fails here. `import type` and `export type` edges are
+ * re-export that drags a storage adapter into `petri-net` fails here. `import type` and `export type` edges are
  * erased before Node runs the code, so they do not count. dependency-cruiser resolves the imports; this
  * script only walks its JSON graph. Run from the repository root (the gate test runs it from a sandbox copy).
  */
@@ -13,7 +13,10 @@ type Budget = { readonly maxFiles: number; readonly forbid: readonly RegExp[] };
 
 /** Budgets are the current graph sizes. Raise one on purpose, in the same change that grows the graph. */
 const budgets: Readonly<Record<string, Budget>> = {
-	"packages/net/src/index.ts": { maxFiles: 6, forbid: [/^node:/, /node_modules\//, /^packages\/(?!net\/)/] },
+	"packages/petri-net/src/index.ts": {
+		maxFiles: 6,
+		forbid: [/^node:/, /node_modules\//, /^packages\/(?!petri-net\/)/],
+	},
 	"packages/runtime/src/index.ts": { maxFiles: 9, forbid: [/^node:/] },
 };
 

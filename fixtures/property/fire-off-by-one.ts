@@ -1,6 +1,6 @@
 // Planted defect: a place with exactly the required tokens counts as short.
-import type { Marking, NotEnabled, Result, Shortfall, Transition } from "../../packages/net/src/index.ts";
-import { addTokens, err, ok, tokensAt } from "../../packages/net/src/index.ts";
+import type { Marking, NotEnabled, Result, Shortfall, Transition } from "../../packages/petri-net/src/index.ts";
+import { addTokens, err, ok, tokensAt } from "../../packages/petri-net/src/index.ts";
 
 export function fireOffByOne(transition: Transition, marking: Marking): Result<Marking, NotEnabled> {
 	const missing: Shortfall[] = transition.inputs

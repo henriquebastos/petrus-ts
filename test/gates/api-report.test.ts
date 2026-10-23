@@ -33,11 +33,11 @@ test("an exported name without a JSDoc line fails the API check, even with --upd
 	const root = sandbox({
 		"tsconfig.base.json": "tsconfig.base.json",
 		packages: "packages",
-		"packages/net/src/undocumented.ts": "fixtures/api/undocumented.ts",
+		"packages/petri-net/src/undocumented.ts": "fixtures/api/undocumented.ts",
 	});
 	appendFileSync(
-		join(root, "packages/net/src/index.ts"),
-		readFileSync(join(repoRoot, "fixtures/api/net-index-undocumented-tail.ts")),
+		join(root, "packages/petri-net/src/index.ts"),
+		readFileSync(join(repoRoot, "fixtures/api/petri-net-index-undocumented-tail.ts")),
 	);
 	const run = await runScript(script, ["--update"], root);
 	expect(run.exitCode).toBe(1);

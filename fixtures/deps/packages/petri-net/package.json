@@ -1,5 +1,5 @@
 {
-	"name": "@fixture/net",
+	"name": "@fixture/petri-net",
 	"private": true,
 	"type": "module",
 	"exports": {

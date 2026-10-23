@@ -72,13 +72,13 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
-  packages/net: {}
+  packages/petri-net: {}
 
   packages/runtime:
     dependencies:
-      '@petrus/net':
+      '@petrus/petri-net':
         specifier: workspace:*
-        version: link:../net
+        version: link:../petri-net
 
 packages:
 

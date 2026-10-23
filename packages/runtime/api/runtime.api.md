@@ -4,11 +4,11 @@
 
 ```ts
 
-import type { Marking } from '@petrus/net';
-import type { NotEnabled } from '@petrus/net';
-import type { Result } from '@petrus/net';
-import type { Transition } from '@petrus/net';
-import type { TransitionId } from '@petrus/net';
+import type { Marking } from '@petrus/petri-net';
+import type { NotEnabled } from '@petrus/petri-net';
+import type { Result } from '@petrus/petri-net';
+import type { Transition } from '@petrus/petri-net';
+import type { TransitionId } from '@petrus/petri-net';
 
 // @public
 export type Clock = {

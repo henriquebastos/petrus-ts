@@ -32,7 +32,7 @@ function committedPackages(): string {
 		".gitignore": ".gitignore",
 		"tsconfig.base.json": "tsconfig.base.json",
 		"vitest.config.ts": "vitest.config.ts",
-		"packages/net": "packages/net",
+		"packages/petri-net": "packages/petri-net",
 		"packages/runtime/src": "packages/runtime/src",
 	});
 	commitBaseline(root);
@@ -42,7 +42,7 @@ function committedPackages(): string {
 describe("Fallow audit, the inspect gate for CRAP and duplication on changed code", () => {
 	test("fails on an uncovered function with cyclomatic complexity 8 (CRAP 72), read from Istanbul coverage", async () => {
 		const root = committedPackages();
-		plant(root, { "packages/net/src/retry-delay.ts": "fixtures/crap/retry-delay.ts" });
+		plant(root, { "packages/petri-net/src/retry-delay.ts": "fixtures/crap/retry-delay.ts" });
 		await runTool("vitest", ["run", "--coverage"], root);
 		const run = await runTool("fallow", ["audit", "--format", "json", "--quiet"], root);
 		const report = auditReport.parse(JSON.parse(run.stdout));
@@ -50,7 +50,7 @@ describe("Fallow audit, the inspect gate for CRAP and duplication on changed cod
 		expect(report.verdict).toBe("fail");
 		expect(report.complexity?.findings).toStrictEqual([
 			{
-				path: "packages/net/src/retry-delay.ts",
+				path: "packages/petri-net/src/retry-delay.ts",
 				name: "retryDelay",
 				cyclomatic: 8,
 				crap: 72,

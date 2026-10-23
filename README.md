@@ -8,16 +8,16 @@ This repository is new. The Python Petrus is a separate reference implementation
 
 ## Status
 
-Walking skeleton. `net` has the firing rule; `runtime` is a stub with the seams (clock, store, serial steps)
+Walking skeleton. `petri-net` has the firing rule; `runtime` is a stub with the seams (clock, store, serial steps)
 that the real runtime will keep. The skeleton exists to prove the toolchain: every quality gate has a planted
 defect in `fixtures/` and a test in `test/gates/` that shows the gate still fails on it.
 
 ## Packages
 
-| Package           | Role                                                                                      | May import |
-| ----------------- | ----------------------------------------------------------------------------------------- | ---------- |
-| `@petrus/net`     | Places, transitions, markings, the firing rule. Pure: no clock, no disk, no npm packages. | nothing    |
-| `@petrus/runtime` | Runs one net instance over a store: steps, commits, recovery.                             | `net`      |
+| Package             | Role                                                                                      | May import  |
+| ------------------- | ----------------------------------------------------------------------------------------- | ----------- |
+| `@petrus/petri-net` | Places, transitions, markings, the firing rule. Pure: no clock, no disk, no npm packages. | nothing     |
+| `@petrus/runtime`   | Runs one net instance over a store: steps, commits, recovery.                             | `petri-net` |
 
 Later packages, in layer order: `hamsterdan`, `hamsterdan-github`, `hamsterdan-cli`. The layer rules already cover them.
 
@@ -44,7 +44,7 @@ merge-base with `main`, uncommitted files included. It fails when the change bri
 with coverage read from `coverage/coverage-final.json`, and when duplication exceeds 0.1% of the code. knip and
 dependency-cruiser keep dead code and architecture, so the audit skips those parts.
 
-`pnpm periodic` runs StrykerJS on `packages/net/src` and `packages/runtime/src` with no score gate. It is a diagnostic: read the surviving mutants.
+`pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src` with no score gate. It is a diagnostic: read the surviving mutants.
 
 ## TypeScript versions
 

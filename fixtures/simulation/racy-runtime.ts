@@ -1,6 +1,6 @@
 // Planted defect: steps do not wait for each other, so two steps can read the same marking.
-import type { Result, TransitionId } from "../../packages/net/src/index.ts";
-import { err, fire, ok } from "../../packages/net/src/index.ts";
+import type { Result, TransitionId } from "../../packages/petri-net/src/index.ts";
+import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
 import type { InstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
 
 export function createRacyRuntime(options: RuntimeOptions): Runtime {

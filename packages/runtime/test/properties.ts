@@ -1,6 +1,6 @@
 import fc from "fast-check";
-import type { Marking, Transition, TransitionId } from "@petrus/net";
-import { fire, placeId, transitionId } from "@petrus/net";
+import type { Marking, Transition, TransitionId } from "@petrus/petri-net";
+import { fire, placeId, transitionId } from "@petrus/petri-net";
 import type { InstanceState, InstanceStore, Runtime, RuntimeOptions } from "../src/index.ts";
 import { createDisk, StoreCrashed } from "./controlled-store.ts";
 

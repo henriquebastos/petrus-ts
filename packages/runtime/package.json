@@ -7,6 +7,6 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"@petrus/net": "workspace:*"
+		"@petrus/petri-net": "workspace:*"
 	}
 }

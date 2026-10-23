@@ -36,7 +36,7 @@ Choices made by trial:
   knip and dependency-cruiser found more on the fixtures.
 - **API surface: api-extractor reports in `packages/*/api/`.** A snapshot of `Object.keys` missed new type-only exports
   and changed signatures. Accept an intended API change with `pnpm lint:api --update`.
-- **Entry-graph budgets** (`scripts/check-entry-graphs.ts`, run by `lint:deps`), as Pi does: `net` reaches at most
+- **Entry-graph budgets** (`scripts/check-entry-graphs.ts`, run by `lint:deps`), as Pi does: `petri-net` reaches at most
   6 files and no `node:` or npm module; `runtime` at most 9 files and no `node:` module.
 - **Compiler flags:** `isolatedDeclarations` and `declaration` on for the packages (root tooling opts out);
   `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns`, `noFallthroughCasesInSwitch` on.
@@ -53,7 +53,7 @@ Choices made by trial:
   lower the threshold then.
 - `fallow audit` sees only changes against `main`. A gate test runs `fallow health` and `fallow dupes` on the whole
   repository in `feedback`, so committed code is covered too.
-- Stryker uses a fixed fast-check seed and an alias to the mutated `@petrus/net` (`vitest.mutation.config.ts`).
+- Stryker uses a fixed fast-check seed and an alias to the mutated `@petrus/petri-net` (`vitest.mutation.config.ts`).
   Without them it silently skips the property tests or loads unmutated code.
 - Every gate has a planted defect in `fixtures/` and a test in `test/gates/`. A gate that changes must keep its fixture failing.
 - The crash-cut property models a crash before a commit lands. A commit that lands and then loses its reply

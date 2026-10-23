@@ -1,6 +1,6 @@
 // Planted defect: the queue lets the next step run as soon as this step issued its commit, not when the commit landed.
-import type { Result, TransitionId } from "../../packages/net/src/index.ts";
-import { err, fire, ok } from "../../packages/net/src/index.ts";
+import type { Result, TransitionId } from "../../packages/petri-net/src/index.ts";
+import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
 import type { InstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
 import { createSerialQueue } from "../../packages/runtime/src/serial-queue.ts";
 

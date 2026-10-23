@@ -1,9 +1,9 @@
 /**
- * Package layers, lowest first: net <- runtime <- hamsterdan <- hamsterdan-github <- hamsterdan-cli.
+ * Package layers, lowest first: petri-net <- runtime <- hamsterdan <- hamsterdan-github <- hamsterdan-cli.
  * A package imports only packages below it, and only through their root (`src/index.ts`).
  * Type-only edges count for cycles. Decision: docs/decisions/0002-toolchain.md.
  */
-const layers = ["net", "runtime", "hamsterdan", "hamsterdan-github", "hamsterdan-cli"];
+const layers = ["petri-net", "runtime", "hamsterdan", "hamsterdan-github", "hamsterdan-cli"];
 
 const layerRules = layers.slice(0, -1).map((layer, index) => ({
 	name: `${layer}-imports-only-lower-layers`,
@@ -31,10 +31,10 @@ module.exports = {
 			to: { path: "^packages/([^/]+)/src/", pathNot: ["^packages/$1/", "^packages/[^/]+/src/index\\.ts$"] },
 		},
 		{
-			name: "net-is-pure",
+			name: "petri-net-is-pure",
 			severity: "error",
-			comment: "net imports no Node builtin and no npm package: it runs anywhere and needs no clock or disk.",
-			from: { path: "^packages/net/src/" },
+			comment: "petri-net imports no Node builtin and no npm package: it runs anywhere and needs no clock or disk.",
+			from: { path: "^packages/petri-net/src/" },
 			to: { dependencyTypes: ["core", "npm", "npm-dev", "npm-optional", "npm-peer", "npm-no-pkg", "npm-unknown"] },
 		},
 		{

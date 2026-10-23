@@ -1,15 +1,15 @@
 [
 	{
-		"rule": "net-imports-only-lower-layers",
-		"from": "packages/net/src/upward.ts"
+		"rule": "petri-net-imports-only-lower-layers",
+		"from": "packages/petri-net/src/upward.ts"
 	},
 	{
-		"rule": "net-is-pure",
-		"from": "packages/net/src/disk.ts"
+		"rule": "petri-net-is-pure",
+		"from": "packages/petri-net/src/disk.ts"
 	},
 	{
 		"rule": "src-never-imports-tests",
-		"from": "packages/net/src/uses-test.ts"
+		"from": "packages/petri-net/src/uses-test.ts"
 	},
 	{
 		"rule": "cross-package-via-root-only",
@@ -24,8 +24,8 @@
 		"from": "packages/runtime/src/upward-by-name.ts"
 	},
 	{
-		"rule": "net-is-pure",
-		"from": "packages/net/src/npm.ts"
+		"rule": "petri-net-is-pure",
+		"from": "packages/petri-net/src/npm.ts"
 	},
 	{
 		"rule": "not-to-unresolvable",

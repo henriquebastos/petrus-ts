@@ -1,4 +1,4 @@
-import type { Marking, TransitionId } from "@petrus/net";
+import type { Marking, TransitionId } from "@petrus/petri-net";
 
 /** One firing that the runtime committed. */
 export type Occurrence = { readonly transition: TransitionId; readonly at: number };

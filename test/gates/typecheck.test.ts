@@ -18,7 +18,7 @@ function expectedErrors(fixture: string): ReadonlySet<string> {
 	);
 }
 
-test.each(["net", "runtime"])(
+test.each(["petri-net", "runtime"])(
 	"tsc with the real %s tsconfig reports one planted error per compiler flag",
 	async (name) => {
 		const root = sandbox({

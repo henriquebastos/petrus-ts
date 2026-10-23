@@ -1,5 +1,5 @@
 import fc from "fast-check";
-import { placeId, transitionId } from "@petrus/net";
+import { placeId, transitionId } from "@petrus/petri-net";
 import { describe, expect, test } from "vitest";
 import { createRuntime } from "../src/index.ts";
 import { createDisk } from "./controlled-store.ts";

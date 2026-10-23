@@ -35,7 +35,7 @@ In a `default` branch that must never run, write `failure satisfies never`.
 A caller must handle a `Result`. It cannot forget a failure that the type shows.
 
 ```ts
-// packages/net/src/fire.ts
+// packages/petri-net/src/fire.ts
 export function fire(transition: Transition, marking: Marking): Result<Marking, NotEnabled>;
 ```
 
@@ -50,7 +50,7 @@ Keep the original error as `cause` when you wrap it.
 A `PlaceId` and a `TransitionId` are both strings. The brand stops one from being used as the other.
 
 ```ts
-// packages/net/src/ids.ts
+// packages/petri-net/src/ids.ts
 export type PlaceId = string & { readonly __brand: "PlaceId" };
 ```
 
@@ -64,7 +64,7 @@ The brand constructor is the only place with an `as` cast, and it carries a reas
 Functions return new values. Nobody changes a marking behind another function's back.
 
 ```ts
-// packages/net/src/marking.ts
+// packages/petri-net/src/marking.ts
 export type Marking = Readonly<Record<PlaceId, number>>;
 ```
 
@@ -112,7 +112,7 @@ Use an annotation or `satisfies` for literals, never `{ ... } as T`.
 `marking[place]` is `number | undefined`. Handle the missing case; do not use `!`.
 
 ```ts
-// packages/net/src/marking.ts
+// packages/petri-net/src/marking.ts
 return marking[place] ?? 0;
 ```
 
@@ -168,18 +168,18 @@ Pattern: Pocock rules `default-exports`, `import-type`, `return-types`, `naming-
 
 ### Layers
 
-Packages form a chain, lowest first: `net`, `runtime`, `hamsterdan`, `hamsterdan-github`, `hamsterdan-cli`.
+Packages form a chain, lowest first: `petri-net`, `runtime`, `hamsterdan`, `hamsterdan-github`, `hamsterdan-cli`.
 A package imports only packages below it, and only through their root.
-`net` imports no Node builtin and no npm package. Code in `packages/*/src` takes time, timers and randomness from injected seams.
+`petri-net` imports no Node builtin and no npm package. Code in `packages/*/src` takes time, timers and randomness from injected seams.
 
-- Enforced by: dependency-cruiser (`.dependency-cruiser.cjs`); `no-restricted-properties` and `no-restricted-globals`; `net` has `"types": []`.
+- Enforced by: dependency-cruiser (`.dependency-cruiser.cjs`); `no-restricted-properties` and `no-restricted-globals`; `petri-net` has `"types": []`.
 
 ## Tests
 
 - Test behaviour through the public functions. Replace slow or nondeterministic collaborators with typed fakes passed in;
   do not patch modules with `vi.mock`.
 - Add a fast-check property next to the examples when a function has a rule that holds for all inputs.
-  Stateful code gets a model-based test (`packages/net/test/model-property.ts`).
+  Stateful code gets a model-based test (`packages/petri-net/test/model-property.ts`).
 - The runtime gets crash-cut and scheduler properties (`packages/runtime/test/properties.ts`).
   A new store or a new step shape must keep both green.
 - Coverage is a floor (statements, lines and functions 90%, branches 85%), not a goal. Every test asserts.

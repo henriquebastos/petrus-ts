@@ -1,5 +1,5 @@
-import type { NotEnabled, Result, Transition, TransitionId } from "@petrus/net";
-import { err, fire, netProblems, ok } from "@petrus/net";
+import type { NotEnabled, Result, Transition, TransitionId } from "@petrus/petri-net";
+import { err, fire, netProblems, ok } from "@petrus/petri-net";
 import type { InstanceState, InstanceStore } from "./instance.ts";
 import type { Clock } from "./seams.ts";
 import { createSerialQueue } from "./serial-queue.ts";
