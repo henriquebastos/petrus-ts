@@ -1,25 +1,23 @@
 # Petrus TS
 
-Petrus runs Petri nets as durable programs. A net's marking is a durable document; a step fires one transition
-and commits the new marking and its occurrence in the same commit. The storage and recovery layer will be
-Pi Durable (`@earendil-works/pi-durable`). Hamsterdan, a pull-request readiness app, is the first application.
-
-This repository is new. The Python Petrus is a separate reference implementation; nothing is ported from it by default.
+Petrus runs Petri nets as durable programs. A step fires one transition and commits the new marking
+and its occurrence in the same commit. The Python Petrus is a separate implementation; nothing is ported from it.
 
 ## Status
 
-Walking skeleton. `petri-net` has the firing rule; `runtime` is a stub with the seams (clock, store, serial steps)
-that the real runtime will keep. The skeleton exists to prove the toolchain: every quality gate has a planted
-defect in `fixtures/` and a test in `test/gates/` that shows the gate still fails on it.
+Walking skeleton. `petri-net` has the firing rule; `runtime` runs steps over a test store, with the seams
+(clock, store, serial steps) that a real store will use. Every quality gate has a planted defect in `fixtures/`
+and a test in `test/gates/` that shows the gate still fails on it.
 
 ## Packages
 
-| Package             | Role                                                                                      | May import  |
-| ------------------- | ----------------------------------------------------------------------------------------- | ----------- |
-| `@petrus/petri-net` | Places, transitions, markings, the firing rule. Pure: no clock, no disk, no npm packages. | nothing     |
-| `@petrus/runtime`   | Runs one net instance over a store: steps, commits, recovery.                             | `petri-net` |
+| Package             | Role                                                         | May import  | Docs                                                                            |
+| ------------------- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
+| `@petrus/petri-net` | Places, transitions, markings, the firing rule. Pure.        | nothing     | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
+| `@petrus/runtime`   | Runs one net instance over a store: steps, commits, crashes. | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
-Later packages, in layer order: `hamsterdan`, `hamsterdan-github`, `hamsterdan-cli`. The layer rules already cover them.
+The layer rules in `.dependency-cruiser.cjs` also name the packages above these:
+`hamsterdan`, `hamsterdan-github` and `hamsterdan-cli`, in that order.
 
 ## Commands
 
@@ -36,24 +34,26 @@ pnpm format        # format code with Biome and fix Markdown with markdownlint
 ```
 
 `pnpm feedback` runs, in order: Biome format check, `tsc` 7 on each package and on the tests, ESLint,
-dependency-cruiser with the entry-graph budgets, the api-extractor reports, knip, markdownlint,
+dependency-cruiser with the entry-graph budgets, the api-extractor reports, knip, markdownlint, the docs check,
 Vitest with coverage, and the gate tests.
 
 `pnpm inspect` runs the tests, then `fallow audit` (config in `.fallowrc.json`) on the files changed since the
 merge-base with `main`, uncommitted files included. It fails when the change brings a function to CRAP 30 or more,
-with coverage read from `coverage/coverage-final.json`, and when duplication exceeds 0.1% of the code. knip and
-dependency-cruiser keep dead code and architecture, so the audit skips those parts.
+and when duplication exceeds 0.1% of the code. knip and dependency-cruiser cover dead code and architecture,
+so the audit skips those parts.
 
-`pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src` with no score gate. It is a diagnostic: read the surviving mutants.
+`pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src` with no score gate.
+It is a diagnostic: read the surviving mutants.
 
 ## TypeScript versions
 
 `tsc` is TypeScript 7 (package `@typescript/native`). The `typescript` package is an alias of TypeScript 6
-(`@typescript/typescript6`), because typescript-eslint, dependency-cruiser and other tools need the compiler API,
-which TypeScript 7.0 does not have. Remove the alias when those tools support TypeScript 7.1.
+(`@typescript/typescript6`), because typescript-eslint, dependency-cruiser and the Stryker TypeScript checker need
+the compiler API, which TypeScript 7.0 does not have. api-extractor bundles TypeScript 5.9 and warns about it.
+Remove the alias when those tools support TypeScript 7.1.
 
 ## Documents
 
-- [docs/style-guide.md](docs/style-guide.md): the house rules, with examples from this code.
-- [docs/decisions/](docs/decisions/): the decisions that shape the repository.
-- Design background: the Obsidian conduit "2026-10-21 Petrus Next" (dossier and `03-expand/foundations/`).
+- [AGENTS.md](AGENTS.md): how to change this repository safely, and which doc to read for each topic.
+- [docs/style-guide.md](docs/style-guide.md): the code rules that no tool checks.
+- Each package has a README and a spec; the package table above links them.

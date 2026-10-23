@@ -6,10 +6,13 @@
 		"moduleResolution": "NodeNext",
 		"strict": true,
 		"noUncheckedIndexedAccess": true,
+		// Beyond Pocock's recommended flags: `?: T` no longer accepts an explicit `undefined`.
 		"exactOptionalPropertyTypes": true,
 		"verbatimModuleSyntax": true,
+		// Node runs the .ts source by stripping types, so no enum, namespace or parameter properties.
 		"erasableSyntaxOnly": true,
 		"isolatedModules": true,
+		// Each exported function declares its types, so api-extractor and readers see the contract without inference.
 		"isolatedDeclarations": true,
 		"declaration": true,
 		"noImplicitOverride": true,
@@ -20,6 +23,7 @@
 		"allowImportingTsExtensions": true,
 		"rewriteRelativeImportExtensions": true,
 		"noEmit": true,
+		// Off on purpose: noPropertyAccessFromIndexSignature. strict and noUncheckedIndexedAccess already catch the bug.
 		"skipLibCheck": true,
 		"types": []
 	}

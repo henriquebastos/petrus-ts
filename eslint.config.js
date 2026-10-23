@@ -1,5 +1,7 @@
-// Lint rules for Petrus. Each rule beyond the shared configs names the gap it closes
-// (docs/decisions/0003-lint-gaps.md) or the house rule it enforces (docs/style-guide.md).
+// Lint rules for Petrus: typescript-eslint strictTypeChecked and stylisticTypeChecked, plus the rules below.
+// Each added rule closes a bug that the shared configs let pass; its comment or message says which.
+// The first line of each file in fixtures/lint/ names the rules that its planted defect must trigger.
+// Off on purpose: no-await-in-loop, because steps must run in order.
 import js from "@eslint/js";
 import comments from "@eslint-community/eslint-plugin-eslint-comments/configs";
 import tseslint from "typescript-eslint";
@@ -45,6 +47,7 @@ const ambientWorld = {
 
 export default tseslint.config(
 	{ ignores: ["fixtures/**", "coverage/**", "reports/**", ".stryker-tmp/**"] },
+	// no-empty and preserve-caught-error: an empty catch, or a wrapped error without its cause, hides a failure.
 	js.configs.recommended,
 	comments.recommended,
 	...tseslint.configs.strictTypeChecked,
@@ -61,19 +64,26 @@ export default tseslint.config(
 				{ patterns: [{ regex: "^\\.{1,2}/.*\\.js$", message: "Import the `.ts` file; Node runs the source." }] },
 			],
 			"@eslint-community/eslint-comments/require-description": ["error", { ignore: [] }],
+			// `type` by default. This rule would also flag `interface X extends Y`; the syntax rule above bans only a bare interface.
 			"@typescript-eslint/consistent-type-definitions": "off",
 			"@typescript-eslint/consistent-type-imports": ["error", { fixStyle: "separate-type-imports" }],
 			"@typescript-eslint/consistent-type-exports": "error",
+			// `import { type X }` still loads the module at run time; `import type` does not.
 			"@typescript-eslint/no-import-type-side-effects": "error",
+			// `{ ... } as T` hides a missing field. Annotate the literal or use `satisfies`.
 			"@typescript-eslint/consistent-type-assertions": [
 				"error",
 				{ assertionStyle: "as", objectLiteralTypeAssertions: "never" },
 			],
+			// `JSON.parse(body) as T` and `as unknown as T` lie to the checker. Parse untrusted input with Zod.
+			// A brand constructor is the one accepted exception, with a reasoned suppression.
 			"@typescript-eslint/no-unsafe-type-assertion": "error",
+			// `if (timeoutMs)` is false for 0, so numbers must be compared. Strings and nullable objects may be tested for truth.
 			"@typescript-eslint/strict-boolean-expressions": [
 				"error",
 				{ allowString: true, allowNullableString: true, allowNumber: false, allowNullableNumber: false },
 			],
+			// A switch over a union must handle every case. In a default that must never run, write `value satisfies never`.
 			"@typescript-eslint/switch-exhaustiveness-check": [
 				"error",
 				{ considerDefaultExhaustiveForUnions: false, requireDefaultForNonUnion: true },
@@ -83,6 +93,7 @@ export default tseslint.config(
 				{ allowExpressions: true, allowTypedFunctionExpressions: true, allowIIFEs: true },
 			],
 			"@typescript-eslint/explicit-module-boundary-types": "error",
+			// tsc accepts `_name` for an unused binding; the linter agrees.
 			"@typescript-eslint/no-unused-vars": [
 				"error",
 				{ argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true },

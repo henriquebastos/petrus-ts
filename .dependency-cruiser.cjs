@@ -1,7 +1,7 @@
 /**
  * Package layers, lowest first: petri-net <- runtime <- hamsterdan <- hamsterdan-github <- hamsterdan-cli.
  * A package imports only packages below it, and only through their root (`src/index.ts`).
- * Type-only edges count for cycles. Decision: docs/decisions/0002-toolchain.md.
+ * Type-only edges count for cycles.
  */
 const layers = ["petri-net", "runtime", "hamsterdan", "hamsterdan-github", "hamsterdan-cli"];
 
@@ -52,9 +52,11 @@ module.exports = {
 	],
 	options: {
 		doNotFollow: { path: "node_modules" },
+		// Without this, an `import type` edge is invisible and a type-only cycle passes.
 		tsPreCompilationDeps: true,
 		tsConfig: { fileName: `${__dirname}/tsconfig.base.json` },
 		enhancedResolveOptions: {
+			// Resolve `@petrus/x` through its package.json `exports`; without this an upward import by name is not seen.
 			exportsFields: ["exports"],
 			conditionNames: ["import", "types", "default"],
 		},

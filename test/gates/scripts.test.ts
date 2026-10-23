@@ -13,6 +13,7 @@ const scriptNames = [
 	"lint:api",
 	"lint:dead",
 	"lint:deps",
+	"lint:docs",
 	"lint:md",
 	"periodic",
 	"test",
