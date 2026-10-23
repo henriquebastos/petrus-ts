@@ -1,0 +1,8 @@
+{
+	"name": "@fixture/net",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	}
+}

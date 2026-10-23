@@ -1,0 +1,39 @@
+{
+	"name": "petrus-ts",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@11.5.2",
+	"engines": {
+		"node": ">=26.8.2 <27"
+	},
+	"scripts": {
+		"feedback": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run lint:deps && pnpm run lint:dead && pnpm run lint:md && pnpm run test && pnpm run test:gates",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"typecheck": "tsc -p packages/net/tsconfig.json && tsc -p packages/runtime/tsconfig.json && tsc -p tsconfig.json",
+		"lint": "eslint .",
+		"lint:deps": "depcruise packages --config .dependency-cruiser.cjs",
+		"lint:dead": "knip",
+		"lint:md": "markdownlint-cli2",
+		"test": "vitest run --coverage",
+		"test:gates": "vitest run --config vitest.gates.config.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.6.2",
+		"@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
+		"@eslint/js": "10.0.1",
+		"@fast-check/vitest": "0.5.0",
+		"@types/node": "26.6.5",
+		"@typescript/native": "npm:typescript@7.0.2",
+		"@vitest/coverage-istanbul": "5.0.5",
+		"dependency-cruiser": "18.7.0",
+		"eslint": "10.13.0",
+		"fast-check": "4.10.2",
+		"knip": "6.42.1",
+		"markdownlint-cli2": "0.24.0",
+		"typescript": "npm:@typescript/typescript6@6.0.2",
+		"typescript-eslint": "8.72.0",
+		"vitest": "5.0.5",
+		"zod": "4.6.7"
+	}
+}

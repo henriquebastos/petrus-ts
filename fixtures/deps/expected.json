@@ -1,0 +1,22 @@
+[
+	{
+		"rule": "net-imports-only-lower-layers",
+		"from": "packages/net/src/upward.ts"
+	},
+	{
+		"rule": "net-is-pure",
+		"from": "packages/net/src/disk.ts"
+	},
+	{
+		"rule": "src-never-imports-tests",
+		"from": "packages/net/src/uses-test.ts"
+	},
+	{
+		"rule": "cross-package-via-root-only",
+		"from": "packages/hamsterdan/src/deep-import.ts"
+	},
+	{
+		"rule": "no-circular",
+		"from": "packages/runtime/src/a.ts"
+	}
+]
