@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,10 +37,41 @@ export function expectedRules(path: string): ReadonlySet<string> {
 export function sandbox(files: Readonly<Record<string, string>>): string {
 	const root = mkdtempSync(join(tmpdir(), "petrus-gate-"));
 	symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"));
+	plant(root, files);
+	return root;
+}
+
+/** Copies repository files into an existing sandbox. `files` maps target path to source path. */
+export function plant(root: string, files: Readonly<Record<string, string>>): void {
 	for (const [target, source] of Object.entries(files)) {
 		cpSync(join(repoRoot, source), join(root, target), { recursive: true });
 	}
-	return root;
+}
+
+/**
+ * Makes the sandbox a git repository on `main` with one commit of its current files, so a tool that
+ * compares changes with a base (`fallow audit`) sees later planted files as the change. User hooks and signing are off.
+ */
+export function commitBaseline(root: string): void {
+	const git = (...args: readonly string[]): void => {
+		execFileSync("git", args, { cwd: root, stdio: "ignore" });
+	};
+	git("init", "--quiet", "--initial-branch=main");
+	git("add", "--all");
+	git(
+		"-c",
+		"user.name=gate",
+		"-c",
+		"user.email=gate@example.invalid",
+		"-c",
+		"commit.gpgsign=false",
+		"-c",
+		"core.hooksPath=/dev/null",
+		"commit",
+		"--quiet",
+		"--no-verify",
+		"--message=baseline",
+	);
 }
 
 /** Reads a JSON file and checks its shape. Parsed input is untrusted until a schema accepts it. */

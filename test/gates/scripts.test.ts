@@ -8,6 +8,7 @@ const scriptNames = [
 	"feedback",
 	"format",
 	"format:check",
+	"inspect",
 	"lint",
 	"lint:dead",
 	"lint:deps",

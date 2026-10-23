@@ -1,0 +1,7 @@
+{
+	"$schema": "./node_modules/fallow/schema.json",
+	"ignorePatterns": ["fixtures/**", "coverage/**"],
+	"health": { "maxCrap": 30, "coverage": "coverage/coverage-final.json" },
+	"duplicates": { "threshold": 0.1 },
+	"audit": { "gate": "new-only", "deadCode": false }
+}
