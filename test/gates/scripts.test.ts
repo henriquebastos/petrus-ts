@@ -10,6 +10,7 @@ const scriptNames = [
 	"format:check",
 	"inspect",
 	"lint",
+	"lint:api",
 	"lint:dead",
 	"lint:deps",
 	"lint:md",

@@ -3,7 +3,7 @@
 	"workspaces": {
 		".": {
 			"entry": ["test/**/*.test.ts"],
-			"project": ["*.ts", "test/**/*.ts"],
+			"project": ["*.ts", "scripts/**/*.ts", "test/**/*.ts"],
 			"vitest": {
 				"config": ["vitest.config.ts", "vitest.mutation.config.ts"]
 			}

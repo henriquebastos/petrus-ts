@@ -10,16 +10,20 @@ export type ToolRun = { readonly exitCode: number; readonly stdout: string; read
 
 /** Runs a tool from the repository's node_modules and returns its exit code and output. It never throws on exit code. */
 export function runTool(tool: string, args: readonly string[], cwd: string): Promise<ToolRun> {
+	return runFile(join(repoRoot, "node_modules", ".bin", tool), args, cwd);
+}
+
+/** Runs a repository script (`scripts/x.ts`) with Node from `cwd`. It never throws on exit code. */
+export function runScript(script: string, args: readonly string[], cwd: string): Promise<ToolRun> {
+	return runFile(process.execPath, [join(repoRoot, script), ...args], cwd);
+}
+
+function runFile(file: string, args: readonly string[], cwd: string): Promise<ToolRun> {
 	return new Promise((resolve) => {
-		execFile(
-			join(repoRoot, "node_modules", ".bin", tool),
-			args,
-			{ cwd, maxBuffer: 32 * 1024 * 1024 },
-			(error, stdout, stderr) => {
-				const exitCode = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
-				resolve({ exitCode, stdout, stderr });
-			},
-		);
+		execFile(file, args, { cwd, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+			const exitCode = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
+			resolve({ exitCode, stdout, stderr });
+		});
 	});
 }
 
@@ -33,6 +37,7 @@ export function expectedRules(path: string): ReadonlySet<string> {
 /**
  * Copies real repository files and fixture files into a new temporary folder, so a tool that skips
  * `fixtures/` sees the planted defect at a path its real config covers. `files` maps target path to source path.
+ * Symlinks are copied as they are, so a package's `node_modules/@petrus/*` link stays inside the sandbox.
  */
 export function sandbox(files: Readonly<Record<string, string>>): string {
 	const root = mkdtempSync(join(tmpdir(), "petrus-gate-"));
@@ -44,7 +49,7 @@ export function sandbox(files: Readonly<Record<string, string>>): string {
 /** Copies repository files into an existing sandbox. `files` maps target path to source path. */
 export function plant(root: string, files: Readonly<Record<string, string>>): void {
 	for (const [target, source] of Object.entries(files)) {
-		cpSync(join(repoRoot, source), join(root, target), { recursive: true });
+		cpSync(join(repoRoot, source), join(root, target), { recursive: true, verbatimSymlinks: true });
 	}
 }
 

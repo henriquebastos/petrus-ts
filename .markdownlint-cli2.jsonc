@@ -5,5 +5,5 @@
 		"MD033": false
 	},
 	"globs": ["**/*.md"],
-	"ignores": ["node_modules/**", "fixtures/**", "coverage/**", "reports/**"]
+	"ignores": ["**/node_modules/**", "fixtures/**", "coverage/**", "reports/**", "packages/*/api/**"]
 }
