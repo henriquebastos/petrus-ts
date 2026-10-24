@@ -1,21 +1,35 @@
 import fc from "fast-check";
 import type { Binding, Token, Transition } from "@petrus/petri-net";
-import { definitionOrder, fire, markingProblems, netProblems, placeId, transitionId } from "@petrus/petri-net";
-import { describe, expect, test } from "vitest";
-import type { Handler, HandlerTransition, Ingress, NetInstanceState, Operation, RuntimeOptions } from "../src/index.ts";
+import { fire, markingProblems, netProblems, placeId, transitionId } from "@petrus/petri-net";
+import { describe, expect, onTestFinished, test } from "vitest";
+import type {
+	Handler,
+	HandlerTransition,
+	Ingress,
+	NetInstance,
+	NetInstanceState,
+	RuntimeOptions,
+} from "../src/index.ts";
 import { busyPlaceId, createRuntime, resultPlaceId, withHandlers } from "../src/index.ts";
 import { resultToken } from "../src/handlers.ts";
-import { admitResult, hostBatchProblems, operationsInFlight, startedOperations } from "../src/operations.ts";
-import { createSettle } from "../src/settle.ts";
-import type { Disk } from "./controlled-store.ts";
-import { createDisk, ReplyLost } from "./controlled-store.ts";
+import {
+	admitResult,
+	hostBatchProblems,
+	operationsInFlight,
+	operationsStartedFrom,
+	startedOperations,
+} from "../src/operations.ts";
+import type { Disk, Process, TestClock } from "./disk.ts";
+import { context, createClock, createDisk } from "./disk.ts";
+import type { Service } from "./handler-properties.ts";
 import {
 	createService,
 	finished,
+	firstBatch,
 	handlerFaultProperty,
 	handlerRaceProperty,
 	jobsNet,
-	jobsState,
+	jobsOptions,
 	plainJobsNet,
 	queue,
 	receipts,
@@ -23,6 +37,7 @@ import {
 	slots,
 	work,
 } from "./handler-properties.ts";
+import { lastState } from "./properties.ts";
 
 const busy = busyPlaceId(work.id);
 const result = resultPlaceId(work.id);
@@ -36,15 +51,28 @@ function transitionOf(id: string): Transition {
 	return found;
 }
 
-function options(disk: Disk, handler: Handler, overrides: Partial<RuntimeOptions> = {}): RuntimeOptions {
-	return {
-		net: jobsNet,
-		store: disk.open(),
-		policy: definitionOrder,
-		clock: { now: () => 7 },
-		handlers: [handler],
-		...overrides,
-	};
+type Opened = {
+	readonly disk: Disk;
+	readonly process: Process;
+	readonly instance: NetInstance;
+	readonly service: Service;
+};
+
+/**
+ * A runtime of the jobs net in the root conversation of a new process, with the service's handler unless `overrides`
+ * names others; the test closes its Harness.
+ */
+async function opened(
+	overrides: (service: Service) => Partial<RuntimeOptions> = () => ({}),
+	clock: TestClock = createClock(),
+): Promise<Opened> {
+	const service = createService(() => disk.history());
+	const runtime = createRuntime({ ...jobsOptions(service, clock), ...overrides(service) });
+	const disk: Disk = createDisk([runtime.extension], clock);
+	const process = await disk.open();
+	onTestFinished(() => process.harness.close(context));
+	const instance = runtime.instance(process.harness, (await process.harness.root(context)).id);
+	return { disk, process, instance, service };
 }
 
 const started = { kind: "occurrence", transition: work.id, binding: { j: "j1", s: "slot" }, at: 7 } as const;
@@ -67,7 +95,7 @@ describe("withHandlers", () => {
 
 	test("the start puts the binding on the busy place, and the end of its variant produces the outputs", () => {
 		const binding = { j: "j1", s: "slot" };
-		const begun = fire(transitionOf("work"), binding, jobsState(["j1"]).marking);
+		const begun = fire(transitionOf("work"), binding, firstBatch(["j1"]).tokens);
 		expect(begun).toStrictEqual({ ok: true, value: { [slots.id]: ["slot"], [busy]: [binding] } });
 		const ended = resultToken(binding, { variant: "done", value: "receipt 1" });
 		const marking = { ...(begun.ok ? begun.value : {}), [result]: [ended] };
@@ -175,6 +203,13 @@ describe("operations", () => {
 		]);
 	});
 
+	test("the operations that a commit starts are those of the log entries it appends", () => {
+		expect(operationsStartedFrom(handlerIds, log, 1)).toStrictEqual([
+			{ id: "work/3", transition: work.id, binding: { j: "j2", s: "slot" } },
+		]);
+		expect(operationsStartedFrom(handlerIds, log, log.length)).toStrictEqual([]);
+	});
+
 	test("an operation is in flight until the log holds its result", () => {
 		const done = [...log, { kind: "ingress", requestId: "result:work/0", tokens: {}, at: 8 } as const];
 		expect(operationsInFlight(handlerIds, done).map((operation) => operation.id)).toStrictEqual(["work/3"]);
@@ -239,48 +274,50 @@ describe("operations", () => {
 });
 
 describe("createRuntime with handlers, examples", () => {
-	test("a step starts an operation but runs no handler; complete records its result and a step ends it", async () => {
-		const disk = createDisk(jobsState(["j1"]));
-		const service = createService(disk);
-		const runtime = createRuntime(options(disk, service.handler));
-		expect((await runtime.step()).fired).toStrictEqual([started]);
-		expect(service.calls().size).toBe(0);
-		expect(await runtime.inFlight()).toStrictEqual([{ id: "work/0", transition: work.id, binding: started.binding }]);
-		const value = { variant: "done", value: "receipt 1" };
-		const ingress = await runtime.complete("work/0", value);
-		expect(ingress.requestId).toBe("result:work/0");
-		expect(await runtime.complete("work/0", { variant: "refused", value: "refused" })).toStrictEqual(ingress);
-		expect(await runtime.inFlight()).toStrictEqual([]);
-		const ended = { busy: started.binding, result: resultToken(started.binding, value) };
-		expect((await runtime.step()).fired).toStrictEqual([
-			{ kind: "occurrence", transition: transitionId("work:done"), binding: ended, at: 7 },
+	const binding = { j: "j1", s: "slot" };
+	const operation = { id: "work/1", transition: work.id, binding };
+
+	test("an enqueue starts an operation and creates its task in one commit; the task runs the handler, records its result and steps until quiet", async () => {
+		const { disk, process, instance, service } = await opened();
+		const { fired } = await instance.enqueue(firstBatch(["j1"]), context);
+		expect(fired).toStrictEqual([{ kind: "occurrence", transition: work.id, binding, at: 0 }]);
+		expect(await instance.inFlight(context)).toStrictEqual([operation]);
+		const { tasks } = await process.harness.inspect(context);
+		expect(tasks.map(({ record }) => [record.kind, record.input])).toStrictEqual([
+			["petrus.operation:jobs", operation],
 		]);
-		expect(disk.stored().marking).toStrictEqual({
-			[slots.id]: ["slot", "slot"],
-			[finished.id]: ["j1"],
-			[receipts.id]: ["receipt 1"],
+		expect(service.calls().size).toBe(0);
+		await process.settle();
+		const ended = resultToken(binding, { variant: "done", value: 'receipt "j1" run 1' });
+		expect(lastState(disk.history()).log.slice(2)).toStrictEqual([
+			{ kind: "ingress", requestId: "result:work/1", tokens: { [result]: [ended] }, at: 0 },
+			{
+				kind: "occurrence",
+				transition: transitionId("work:done"),
+				binding: { busy: binding, result: ended },
+				at: 0,
+			},
+		]);
+		expect(await instance.state(context)).toMatchObject({
+			marking: { [slots.id]: ["slot", "slot"], [finished.id]: ["j1"], [receipts.id]: ['receipt "j1" run 1'] },
 		});
+		expect(await instance.inFlight(context)).toStrictEqual([]);
+		expect(disk.history()).toHaveLength(2);
 	});
 
-	test("settle runs every handler, records each result, and steps until the net is quiet", async () => {
-		const disk = createDisk(jobsState(["j1", "j3"]));
-		const service = createService(disk);
-		const fired = await createRuntime(options(disk, service.handler)).settle();
-		expect(fired.map((occurrence) => occurrence.transition)).toStrictEqual([
-			"work",
-			"work",
-			"work:done",
-			"work:refused",
-		]);
-		expect(disk.stored().marking).toStrictEqual({
+	test("the handler tasks end every operation by the variant that its handler returns", async () => {
+		const { process, instance, service } = await opened();
+		await instance.enqueue(firstBatch(["j1", "j3"]), context);
+		await process.settle();
+		expect((await instance.state(context)).marking).toStrictEqual({
 			[slots.id]: ["slot", "slot"],
 			[finished.id]: ["j1"],
 			[receipts.id]: ['receipt "j1" run 1'],
 			[refused.id]: ["j3"],
 		});
 		expect([...service.calls()]).toStrictEqual([
-			["work/0", 1],
 			["work/1", 1],
+			["work/2", 1],
 		]);
 	});
 
@@ -294,130 +331,171 @@ describe("createRuntime with handlers, examples", () => {
 				done: { value: queue.colourSet, outputs: [{ place: refused, expression: (_binding, j) => [j] }] },
 			},
 		};
-		const disk = createDisk(jobsState(["j1"]));
 		const ran: string[] = [];
 		const otherHandler: Handler<"j"> = {
 			transition: other,
-			run: (binding, { operationId }) => {
+			run: (started, { operationId }) => {
 				ran.push(operationId);
-				return Promise.resolve({ variant: "done", value: binding.j });
+				return Promise.resolve({ variant: "done", value: started.j });
 			},
 		};
-		const handlers = [otherHandler, createService(disk).handler];
-		await createRuntime({ ...options(disk, otherHandler), handlers }).settle();
-		expect(ran).toStrictEqual(["other/3"]);
-		expect(disk.stored().marking[refused.id]).toStrictEqual(["j1"]);
+		const { process, instance, service } = await opened((jobs) => ({ handlers: [otherHandler, jobs.handler] }));
+		await instance.enqueue(firstBatch(["j1"]), context);
+		await process.settle();
+		expect(ran).toStrictEqual(["other/4"]);
+		expect([...service.calls()]).toStrictEqual([["work/1", 1]]);
+		expect((await instance.state(context)).marking[refused.id]).toStrictEqual(["j1"]);
 	});
 
-	test("settle with no handlers steps until nothing fires", async () => {
-		const disk = createDisk(jobsState(["j1"]));
-		const runtime = createRuntime({ ...options(disk, createService(disk).handler), handlers: [] });
-		expect(await runtime.settle()).toStrictEqual([]);
-		expect(await runtime.inFlight()).toStrictEqual([]);
-	});
-
-	test("a settle reports a handler's error; the operation stays in flight, and the next settle runs it again", async () => {
-		const disk = createDisk(jobsState(["j1"]));
-		const service = createService(disk);
-		let outage = true;
-		const flaky: Handler = {
-			transition: work,
-			run: async (binding, context) => {
-				if (outage) {
-					outage = false;
-					throw new Error("service is down");
-				}
-				return service.handler.run(binding, context);
-			},
-		};
-		const runtime = createRuntime(options(disk, flaky));
-		await expect(runtime.settle()).rejects.toThrow("service is down");
-		expect((await runtime.inFlight()).map((operation) => operation.id)).toStrictEqual(["work/0"]);
-		await runtime.settle();
-		expect(disk.stored().marking[finished.id]).toStrictEqual(["j1"]);
-	});
-
-	test("one settle reports a failed run; another settle that waits on it runs it again", async () => {
-		const disk = createDisk(jobsState(["j2"]));
-		let open = (): void => undefined;
-		const gate = new Promise<void>((resolve) => {
-			open = resolve;
-		});
-		const service = createService(disk, () => gate);
-		const runtime = createRuntime(options(disk, service.handler));
-		await runtime.step();
-		const both = Promise.allSettled([runtime.settle(), runtime.settle()]);
-		// The store answers at once, so a few turns of the microtask queue bring both settles to the run in flight.
-		for (let turn = 0; turn < 50; turn += 1) {
-			await Promise.resolve();
+	test("two runtimes with their own names run their operations side by side in one Harness", async () => {
+		const clock = createClock();
+		const services = [createService(() => disk.history()), createService(() => disk.history())] as const;
+		const runtimes = [
+			createRuntime({ ...jobsOptions(services[0], clock), name: "jobs-a" }),
+			createRuntime({ ...jobsOptions(services[1], clock), name: "jobs-b" }),
+		] as const;
+		const disk: Disk = createDisk(
+			runtimes.map((runtime) => runtime.extension),
+			clock,
+		);
+		const process = await disk.open();
+		onTestFinished(() => process.harness.close(context));
+		const root = await process.harness.root(context);
+		const other = await process.harness.createConversation({ ownership: { kind: "ownerless" } }, context);
+		const instances = [
+			runtimes[0].instance(process.harness, root.id),
+			runtimes[1].instance(process.harness, other.id),
+		];
+		for (const instance of instances) {
+			await instance.enqueue(firstBatch(["j1"]), context);
 		}
-		open();
-		const outcomes = await both;
-		expect(outcomes.map((outcome) => outcome.status).sort()).toStrictEqual(["fulfilled", "rejected"]);
-		expect(service.calls().get("work/0")).toBe(2);
-		expect(disk.stored().marking[finished.id]).toStrictEqual(["j2"]);
+		await process.settle();
+		for (const instance of instances) {
+			expect(await instance.inFlight(context)).toStrictEqual([]);
+			expect((await instance.state(context)).marking[finished.id]).toStrictEqual(["j1"]);
+		}
 	});
 
-	test("after a lost reply on a result, the next settle ends the operation without running it again", async () => {
-		const disk = createDisk(jobsState(["j1"]));
-		const service = createService(disk);
-		const runtime = createRuntime(options(disk, service.handler, { store: disk.open({ loseReplyAtCommit: 1 }) }));
-		await expect(runtime.settle()).rejects.toThrow(ReplyLost);
-		await runtime.settle();
-		expect(service.calls().get("work/0")).toBe(1);
-		expect(disk.stored().marking[finished.id]).toStrictEqual(["j1"]);
+	test("a handler's throw is reported, and the operation stays in flight and runs again after retryDelayMs", async () => {
+		const clock = createClock(100);
+		const runs: number[] = [];
+		const flaky = (service: Service): Handler => ({
+			transition: work,
+			run: (started, handlerContext) => {
+				runs.push(clock.now());
+				return runs.length === 1
+					? Promise.reject(new Error("the service is down"))
+					: service.handler.run(started, handlerContext);
+			},
+		});
+		const { disk, process, instance } = await opened((service) => ({ handlers: [flaky(service)] }), clock);
+		await instance.enqueue(firstBatch(["j1"]), context);
+		await process.runReady();
+		expect(disk.reports()).toStrictEqual([new Error("the service is down")]);
+		expect(await instance.inFlight(context)).toStrictEqual([operation]);
+		expect(process.harness.wake()).toStrictEqual({ active: false, at: 110 });
+		await process.settle();
+		expect(runs).toStrictEqual([100, 110]);
+		expect((await instance.state(context)).marking[finished.id]).toStrictEqual(["j1"]);
+	});
+
+	test("a task whose transition has no handler, as after the host dropped it, is reported and runs again after retryDelayMs", async () => {
+		const clock = createClock();
+		const service = createService(() => []);
+		const withHandler = createRuntime(jobsOptions(service, clock));
+		const withoutHandler = createRuntime({ ...jobsOptions(service, clock), handlers: [] });
+		const disk = createDisk([withoutHandler.extension], clock);
+		const process = await disk.open();
+		onTestFinished(() => process.harness.close(context));
+		const root = await process.harness.root(context);
+		await withHandler.instance(process.harness, root.id).enqueue(firstBatch(["j1"]), context);
+		await process.runReady();
+		expect(disk.reports()).toStrictEqual([new Error("no handler runs work")]);
+		expect(process.harness.wake()).toStrictEqual({ active: false, at: 10 });
+		expect(service.calls().size).toBe(0);
+	});
+
+	test("aborting a handler task ends it as aborted without running the handler, and its operation stays in flight", async () => {
+		const { process, instance, service } = await opened();
+		await instance.enqueue(firstBatch(["j1"]), context);
+		const [task] = (await process.harness.inspect(context)).tasks;
+		if (task === undefined) {
+			throw new Error("the enqueue created no task");
+		}
+		const { id } = task.record;
+		expect(await process.harness.abortTask(id, context)).toBe("marked");
+		await process.settle();
+		expect((await process.harness.getTask(id, context))?.state).toMatchObject({
+			status: "terminal",
+			outcome: { status: "aborted" },
+		});
+		expect(service.calls().size).toBe(0);
+		expect(await instance.inFlight(context)).toStrictEqual([operation]);
+	});
+
+	test("aborting a task while its handler runs ends it as aborted, records no result and reports nothing", async () => {
+		let entered = (): void => undefined;
+		let finish = (): void => undefined;
+		const running = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const slow: Handler<"j" | "s"> = {
+			transition: work,
+			run: () =>
+				new Promise((resolve) => {
+					finish = () => {
+						resolve({ variant: "done", value: "late" });
+					};
+					entered();
+				}),
+		};
+		const { disk, process, instance } = await opened(() => ({ handlers: [slow] }));
+		await instance.enqueue(firstBatch(["j1"]), context);
+		process.harness.resume();
+		await running;
+		const [task] = (await process.harness.inspect(context)).tasks;
+		if (task === undefined) {
+			throw new Error("the enqueue created no task");
+		}
+		const aborted = process.harness.abortTask(task.record.id, context);
+		finish();
+		expect(await aborted).toBe("marked");
+		await process.settle();
+		expect((await process.harness.getTask(task.record.id, context))?.state).toMatchObject({
+			status: "terminal",
+			outcome: { status: "aborted" },
+		});
+		expect(disk.reports()).toStrictEqual([]);
+		expect(await instance.inFlight(context)).toStrictEqual([operation]);
 	});
 
 	test("refuses a host batch that uses a result request id or fills a place the runtime owns, and commits nothing", async () => {
-		const disk = createDisk(jobsState([]));
-		const runtime = createRuntime(options(disk, createService(disk).handler));
+		const { disk, instance } = await opened();
 		await expect(
-			runtime.enqueue({ requestId: "result:work/0", tokens: { [busy]: [{ j: "j1", s: "slot" }] } }),
+			instance.enqueue({ requestId: "result:work/0", tokens: { [busy]: [{ j: "j1", s: "slot" }] } }, context),
 		).rejects.toThrow(
 			new Error(
 				'invalid batch result:work/0: the request id starts with "result:", which the runtime keeps for handler results; place work:busy is filled only by the runtime',
 			),
 		);
-		expect(disk.stored()).toStrictEqual(jobsState([]));
+		expect(disk.history()).toStrictEqual([]);
 	});
 
 	test("refuses a handler transition whose parts clash with the net, and names every problem", () => {
-		const disk = createDisk(jobsState([]));
+		const service = createService(() => []);
 		const clash = { ...jobsNet, places: [...jobsNet.places, { id: busy, colourSet: queue.colourSet }] };
-		expect(() => createRuntime({ ...options(disk, createService(disk).handler), net: clash })).toThrow(
+		expect(() => createRuntime({ ...jobsOptions(service, createClock()), net: clash })).toThrow(
 			new Error("invalid net: work:busy: id used 2 times"),
 		);
 	});
 });
 
-describe("createSettle", () => {
-	const operation: Operation = { id: "ghost/0", transition: transitionId("ghost"), binding: {} };
-
-	test("rejects when no handler runs an operation, and leaves it to the next settle", async () => {
-		let completes = 0;
-		const settle = createSettle(
-			{
-				step: () => Promise.resolve({ fired: [], state: { marking: {}, log: [] } }),
-				inFlight: () => Promise.resolve([operation]),
-				complete: () => {
-					completes += 1;
-					return Promise.reject(new Error("never called"));
-				},
-			},
-			[],
-		);
-		await expect(settle()).rejects.toThrow(new Error("no handler runs ghost"));
-		await expect(settle()).rejects.toThrow(new Error("no handler runs ghost"));
-		expect(completes).toBe(0);
-	});
-});
-
 describe("createRuntime with handlers, simulation", () => {
-	test("each job ends once after a crash, a lost reply or a failed commit at any commit of a settle", async () => {
+	test("each job ends once after a crash before or after any commit, and after the service's outage", async () => {
 		await fc.assert(handlerFaultProperty(createRuntime));
 	});
 
-	test("concurrent settles run each operation once, under any order of the store and the handlers", async () => {
+	test("each operation runs once, at most two at once, under any order of handler ends and a late batch", async () => {
 		await fc.assert(handlerRaceProperty(createRuntime));
 	});
 });

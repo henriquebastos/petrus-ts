@@ -18,16 +18,5 @@ export type Ingress = Batch & { readonly kind: "ingress"; readonly at: number };
 /** The log records, in commit order, what changed the marking. Replaying it from the first marking gives the marking. */
 export type LogEntry = Occurrence | Ingress;
 
-/** The stored state of one net instance. The marking and the log change in the same commit. */
+/** The state of one net instance. The marking and the log change in the same commit. */
 export type NetInstanceState = { readonly marking: Marking; readonly log: readonly LogEntry[] };
-
-/**
- * Storage for one net instance. `commit` is atomic: after a crash the store holds the old state
- * or the new state, never a part of each. `commit` settles only when the write has landed or never will, so a
- * rejected commit that lands later is a bug in the store. One runtime at a time uses a store: the store does no
- * compare-and-swap, so two runtimes would overwrite each other.
- */
-export type NetInstanceStore = {
-	readonly load: () => Promise<NetInstanceState>;
-	readonly commit: (state: NetInstanceState) => Promise<void>;
-};

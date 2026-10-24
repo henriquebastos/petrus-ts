@@ -6,5 +6,10 @@
 	"dependencies": {
 		"@petrus/petri-net": "workspace:*",
 		"@petrus/runtime": "workspace:*"
+	},
+	"devDependencies": {
+		"@earendil-works/chord": "1.4.0",
+		"@earendil-works/pi-ai": "1.4.0",
+		"@earendil-works/pi-durable": "1.4.0"
 	}
 }

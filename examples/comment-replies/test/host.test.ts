@@ -1,26 +1,18 @@
-import { definitionOrder } from "@petrus/petri-net";
-import type { NetInstanceState, NetInstanceStore, Runtime } from "@petrus/runtime";
-import { createRuntime } from "@petrus/runtime";
-import { describe, expect, test } from "vitest";
+import { MemoryStorage } from "@earendil-works/pi-durable";
+import { definitionOrder, fireStep } from "@petrus/petri-net";
+import type { NetInstance } from "@petrus/runtime";
+import { describe, expect, onTestFinished, test } from "vitest";
 import type { Delivery } from "../src/deliveries.ts";
 import { toBatch } from "../src/deliveries.ts";
 import { handleDelivery } from "../src/host.ts";
 import { comments, free, net, replies } from "../src/net.ts";
+import { context, openInstance } from "./harness.ts";
 
-function memoryStore(): NetInstanceStore & { readonly stored: () => NetInstanceState } {
-	let stored: NetInstanceState = { marking: {}, log: [] };
-	return {
-		stored: () => stored,
-		load: () => Promise.resolve(stored),
-		commit: (state) => {
-			stored = state;
-			return Promise.resolve();
-		},
-	};
-}
-
-function runtimeOver(store: NetInstanceStore): Runtime {
-	return createRuntime({ net, store, policy: definitionOrder, clock: { now: () => 1 } });
+/** The net instance of a new Harness over memory storage; the test closes the Harness. */
+async function memoryInstance(): Promise<NetInstance> {
+	const { instance, close } = await openInstance(new MemoryStorage());
+	onTestFinished(close);
+	return instance;
 }
 
 const repo = 4001;
@@ -51,65 +43,67 @@ const commented = (id: string, { pr, comment, login = "ana", repository = repo }
 
 describe("handleDelivery", () => {
 	test("answers a comment on an opened pull request and gives the resource token back", async () => {
-		const store = memoryStore();
-		const runtime = runtimeOver(store);
-		await handleDelivery(runtime, opened("d1", 7));
-		const handled = await handleDelivery(runtime, commented("d2", { pr: 7, comment: 501 }));
+		const instance = await memoryInstance();
+		await handleDelivery(instance, opened("d1", 7), context);
+		const handled = await handleDelivery(instance, commented("d2", { pr: 7, comment: 501 }), context);
 		expect(handled).toMatchObject({ kind: "handled", requestId: "comment:501", fired: [{ transition: "answer" }] });
-		expect(store.stored().marking).toStrictEqual({
+		expect((await instance.state(context)).marking).toStrictEqual({
 			[free.id]: [{ repo, pr: 7 }],
 			[replies.id]: [{ repo, pr: 7, comment: 501 }],
 		});
 	});
 
 	test("answers one comment per pull request per step, because the resource token is held for the step", async () => {
-		const store = memoryStore();
-		const runtime = runtimeOver(store);
-		await handleDelivery(runtime, commented("d1", { pr: 7, comment: 501 }));
-		await handleDelivery(runtime, commented("d2", { pr: 7, comment: 502 }));
-		await runtime.enqueue({ requestId: "pull-request:4001/7", tokens: { [free.id]: [{ repo, pr: 7 }] } });
-		expect((await runtime.step()).fired.map((occurrence) => occurrence.binding)).toStrictEqual([
-			{ c: { repo, pr: 7, comment: 501, author: 91 }, p: { repo, pr: 7 } },
+		const instance = await memoryInstance();
+		await handleDelivery(instance, commented("d1", { pr: 7, comment: 501 }), context);
+		await handleDelivery(instance, commented("d2", { pr: 7, comment: 502 }), context);
+		const waiting = (await instance.state(context)).marking;
+		const pull = { repo, pr: 7 };
+		expect(fireStep(net, { ...waiting, [free.id]: [pull] }, definitionOrder).fired).toStrictEqual([
+			{ transition: "answer", binding: { c: { repo, pr: 7, comment: 501, author: 91 }, p: pull } },
 		]);
-		expect((await runtime.step()).fired).toHaveLength(1);
-		expect((await runtime.step()).fired).toHaveLength(0);
+		const handled = await handleDelivery(instance, opened("d3", 7), context);
+		expect(handled).toMatchObject({
+			fired: [{ binding: { c: { comment: 501 } } }, { binding: { c: { comment: 502 } } }],
+		});
 	});
 
 	test("keeps pull requests with one number in two repositories apart", async () => {
-		const store = memoryStore();
-		const runtime = runtimeOver(store);
-		await handleDelivery(runtime, opened("d1", 7, 4001));
-		await handleDelivery(runtime, opened("d2", 7, 4002));
-		await handleDelivery(runtime, commented("d3", { pr: 7, comment: 501, repository: 4002 }));
-		expect(store.stored().marking[replies.id]).toStrictEqual([{ repo: 4002, pr: 7, comment: 501 }]);
-		expect(store.stored().marking[free.id]).toStrictEqual([
+		const instance = await memoryInstance();
+		await handleDelivery(instance, opened("d1", 7, 4001), context);
+		await handleDelivery(instance, opened("d2", 7, 4002), context);
+		await handleDelivery(instance, commented("d3", { pr: 7, comment: 501, repository: 4002 }), context);
+		const { marking } = await instance.state(context);
+		expect(marking[replies.id]).toStrictEqual([{ repo: 4002, pr: 7, comment: 501 }]);
+		expect(marking[free.id]).toStrictEqual([
 			{ repo: 4001, pr: 7 },
 			{ repo: 4002, pr: 7 },
 		]);
 	});
 
 	test("commits nothing for a delivery the app ignores", async () => {
-		const store = memoryStore();
-		const handled = await handleDelivery(runtimeOver(store), { id: "d1", event: "push", payload: {} });
+		const instance = await memoryInstance();
+		const handled = await handleDelivery(instance, { id: "d1", event: "push", payload: {} }, context);
 		expect(handled.kind).toBe("ignored");
-		expect(store.stored()).toStrictEqual({ marking: {}, log: [] });
+		expect(await instance.state(context)).toStrictEqual({ marking: {}, log: [] });
 	});
 
 	test("adds a fact once, whether it comes again as a redelivery or as a new delivery", async () => {
-		const store = memoryStore();
-		const runtime = runtimeOver(store);
-		await handleDelivery(runtime, opened("d1", 7));
-		await handleDelivery(runtime, commented("d2", { pr: 7, comment: 501 }));
-		const redelivered = await handleDelivery(runtime, commented("d2", { pr: 7, comment: 501 }));
+		const instance = await memoryInstance();
+		await handleDelivery(instance, opened("d1", 7), context);
+		await handleDelivery(instance, commented("d2", { pr: 7, comment: 501 }), context);
+		const redelivered = await handleDelivery(instance, commented("d2", { pr: 7, comment: 501 }), context);
 		const polledAfterRename = await handleDelivery(
-			runtime,
+			instance,
 			commented("poll-9", { pr: 7, comment: 501, login: "ana2" }),
+			context,
 		);
 		expect([redelivered, polledAfterRename]).toStrictEqual([
 			{ kind: "handled", requestId: "comment:501", fired: [] },
 			{ kind: "handled", requestId: "comment:501", fired: [] },
 		]);
-		expect(store.stored().log.map((entry) => entry.kind)).toStrictEqual(["ingress", "ingress", "occurrence"]);
+		const { log } = await instance.state(context);
+		expect(log.map((entry) => entry.kind)).toStrictEqual(["ingress", "ingress", "occurrence"]);
 	});
 });
 

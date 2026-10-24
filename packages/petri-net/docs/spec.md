@@ -39,7 +39,7 @@ definition 4.2. It keeps their words. The core rule:
 
 Jensen's tuple (P, T, A, Σ, V, C, G, E, I) maps as: P, T are `Net.places`, `Net.transitions`; A, E are the arcs;
 V is `Transition.variables`; C is `Place.colourSet`; G is `Transition.guard`; Σ is the colour sets in use; I is the
-first marking a store holds. Petrus differs in four ways:
+tokens of the first batch. Petrus differs in four ways:
 
 - An input arc expression is a list of variables, with no constants or patterns; a guard does that work.
 - Each variable occurs on an input arc. Guards and output expressions are opaque functions, so a variable that only

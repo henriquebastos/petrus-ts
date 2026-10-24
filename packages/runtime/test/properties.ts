@@ -1,17 +1,19 @@
+import type { Harness } from "@earendil-works/pi-durable";
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, SelectionPolicy, Transition } from "@petrus/petri-net";
 import { definitionOrder, fireStep, placeId, transitionId } from "@petrus/petri-net";
 import type {
 	Batch,
+	Committed,
 	Ingress,
+	NetInstanceHost,
 	LogEntry,
 	NetInstanceState,
-	NetInstanceStore,
 	Runtime,
 	RuntimeOptions,
-	Stepped,
 } from "../src/index.ts";
-import { CommitFailed, createDisk, ReplyLost, scheduledStore, StoreCrashed } from "./controlled-store.ts";
+import type { Faults, TestClock } from "./disk.ts";
+import { context, createClock, createDisk, inProcess } from "./disk.ts";
 import { replay, sameMarking, withAdded } from "./replay.ts";
 
 /** Any function with the shape of `createRuntime`. Gate fixtures pass broken runtimes here. */
@@ -20,7 +22,7 @@ export type RuntimeFactory = (options: RuntimeOptions) => Runtime;
 const job: ColourSet = { name: "Job", contains: (token) => token === "j1" || token === "j2" };
 export const ready: Place = { id: placeId("ready"), colourSet: job };
 export const left: Place = { id: placeId("left"), colourSet: job };
-const right: Place = { id: placeId("right"), colourSet: job };
+export const right: Place = { id: placeId("right"), colourSet: job };
 
 export function move(id: string, from: Place, to: Place): Transition<"j"> {
 	return {
@@ -32,13 +34,28 @@ export function move(id: string, from: Place, to: Place): Transition<"j"> {
 	};
 }
 
-/** Two transitions compete for each job token; a third returns it. The policy decides who wins. */
+/** Two transitions compete for each job token. The policy decides who wins. */
 export const contested: Net = {
 	places: [ready, left, right],
-	transitions: [move("take-left", ready, left), move("take-right", ready, right), move("give-back", left, ready)],
+	transitions: [move("take-left", ready, left), move("take-right", ready, right)],
 };
 
 export const initialState: NetInstanceState = { marking: { [ready.id]: ["j1", "j2"] }, log: [] };
+
+const count: ColourSet = { name: "Count", contains: (token) => typeof token === "number" && Number.isInteger(token) };
+export const counted: Place = { id: placeId("count"), colourSet: count };
+
+/** A token on `count` goes up by one per step, from where it starts to `top`: a net that fires for `top` steps from 0. */
+export function counter(top: number): Net {
+	const tick: Transition<"n"> = {
+		id: transitionId("tick"),
+		variables: { n: count },
+		guard: ({ n }) => typeof n === "number" && n < top,
+		inputs: [{ place: counted, variables: ["n"] }],
+		outputs: [{ place: counted, expression: ({ n }) => [typeof n === "number" ? n + 1 : n] }],
+	};
+	return { places: [counted], transitions: [tick] };
+}
 
 /** Policies that keep, reverse, or cut the candidates to one, so the competing transitions both get to fire. */
 const policyArbitrary: fc.Arbitrary<SelectionPolicy> = fc.constantFrom<SelectionPolicy>(
@@ -47,18 +64,41 @@ const policyArbitrary: fc.Arbitrary<SelectionPolicy> = fc.constantFrom<Selection
 	(enabled) => enabled.slice(0, 1),
 );
 
-const fixedClock = { now: (): number => 1_000 };
+/** One crash of the first process: before its storage commit `commit` lands, or right after. */
+export type Fault = { readonly kind: keyof Faults; readonly commit: number };
 
-/** What a host asks for: a step, or a batch of job tokens for `ready`. */
-type Action = "step" | Batch;
+export function faultArbitrary(maxCommit: number): fc.Arbitrary<Fault> {
+	return fc.record({
+		kind: fc.constantFrom<keyof Faults>("crashAtCommit", "crashAfterCommit"),
+		commit: fc.nat({ max: maxCommit }),
+	});
+}
+
+export function contestedOptions(policy: SelectionPolicy, clock: TestClock): RuntimeOptions {
+	return { name: "contested", net: contested, policy, clock, retryDelayMs: 10 };
+}
 
 function batch(requestId: string, tokens: readonly string[]): Batch {
 	return { requestId, tokens: { [ready.id]: tokens } };
 }
 
-/** Replays the log on the contested net from the initial marking. */
-function replayed(log: readonly LogEntry[]): Marking | undefined {
-	return replay(contested, initialState.marking, log);
+const noInstance: NetInstanceState = { marking: {}, log: [] };
+
+/** The last committed state, or no tokens and an empty log when nothing committed. */
+export function lastState(history: readonly NetInstanceState[]): NetInstanceState {
+	return history.at(-1) ?? noInstance;
+}
+
+/**
+ * At every commit the marking is the replay of the log, from no tokens, and the net is quiet: the policy selects
+ * nothing.
+ */
+export function everyCommitHeld(net: Net, policy: SelectionPolicy, history: readonly NetInstanceState[]): boolean {
+	return history.every(
+		(state) =>
+			sameMarking(replay(net, {}, state.log), state.marking) &&
+			fireStep(net, state.marking, policy).fired.length === 0,
+	);
 }
 
 /** The log without times, so a model that has no clock can give it. */
@@ -72,160 +112,66 @@ function untimed(log: readonly LogEntry[]): string {
 	);
 }
 
-/** The untimed log of the actions, run in order from the initial marking with no fault. */
-function modelLog(actions: readonly Action[], policy: SelectionPolicy): string {
-	let marking = initialState.marking;
+/** The untimed log of the batches, each added in order from no tokens and followed by steps until the net is quiet. */
+function modelLog(batches: readonly Batch[], policy: SelectionPolicy): string {
+	let marking: Marking = {};
 	const entries: unknown[] = [];
-	for (const action of actions) {
-		if (action === "step") {
-			const step = fireStep(contested, marking, policy);
+	for (const added of batches) {
+		marking = withAdded(marking, added.tokens);
+		entries.push(added);
+		for (let step = fireStep(contested, marking, policy); step.fired.length > 0; ) {
 			marking = step.marking;
 			entries.push(...step.fired);
-		} else {
-			marking = withAdded(marking, action.tokens);
-			entries.push(action);
+			step = fireStep(contested, marking, policy);
 		}
 	}
 	return JSON.stringify(entries);
 }
 
+/** Batches of job tokens with fresh request ids, as a host sends them. The first gives the first tokens. */
+const batchesArbitrary: fc.Arbitrary<readonly Batch[]> = fc
+	.array(fc.array(fc.constantFrom("j1", "j2"), { minLength: 1, maxLength: 2 }), { minLength: 1, maxLength: 5 })
+	.map((choices) => choices.map((tokens, index) => batch(`r${String(index)}`, tokens)));
+
 /**
- * After a crash at any commit and a reopen that runs the rest of the steps, the stored marking is the replay of the
- * stored log, and the log is what the model gives: the crashed step's commit did not land, so it ran again.
+ * The first process enqueues the batches until it dies, before or after any of its commits lands. A second process
+ * enqueues every batch again, from the first, with the same request ids, as a host does that cannot tell which
+ * landed. At every commit the marking is the replay of the log and the net is quiet; the log is what the model gives,
+ * so each batch landed once; and each enqueue of the second process returned the ingress that the log holds.
  */
-export function crashCutProperty(factory: RuntimeFactory): fc.IAsyncProperty<[number, number, SelectionPolicy]> {
-	return fc.asyncProperty(fc.nat({ max: 8 }), fc.nat({ max: 8 }), policyArbitrary, async (count, cut, policy) => {
-		const disk = createDisk(initialState);
-		const first = factory({ net: contested, store: disk.open({ crashAtCommit: cut }), policy, clock: fixedClock });
-		let survivors = 0;
-		while (survivors < count && (await stepSurvives(first))) {
-			survivors += 1;
-		}
-		const second = factory({ net: contested, store: disk.open(), policy, clock: fixedClock });
-		for (let index = survivors; index < count; index += 1) {
-			await second.step();
-		}
-		const stored = disk.stored();
-		const steps = Array.from({ length: count }, (): Action => "step");
-		return sameMarking(replayed(stored.log), stored.marking) && untimed(stored.log) === modelLog(steps, policy);
+export function crashProperty(factory: RuntimeFactory): fc.IAsyncProperty<[readonly Batch[], Fault, SelectionPolicy]> {
+	return fc.asyncProperty(batchesArbitrary, faultArbitrary(8), policyArbitrary, async (batches, fault, policy) => {
+		const clock = createClock();
+		const runtime = factory(contestedOptions(policy, clock));
+		const disk = createDisk([runtime.extension], clock);
+		const enqueueAll = async (harness: Harness): Promise<Ingress[]> => {
+			const instance = runtime.instance(harness, (await harness.root(context)).id);
+			const acknowledged: Ingress[] = [];
+			for (const sent of batches) {
+				clock.moveTo(clock.now() + 1);
+				acknowledged.push((await instance.enqueue(sent, context)).ingress);
+			}
+			return acknowledged;
+		};
+		await inProcess(disk, { [fault.kind]: fault.commit }, async ({ harness }) => {
+			await enqueueAll(harness);
+		});
+		let acknowledged: readonly Ingress[] = [];
+		const recovered = await inProcess(disk, {}, async ({ harness }) => {
+			acknowledged = await enqueueAll(harness);
+		});
+		const { log } = lastState(disk.history());
+		return (
+			recovered === "done" &&
+			everyCommitHeld(contested, policy, disk.history()) &&
+			untimed(log) === modelLog(batches, policy) &&
+			JSON.stringify(acknowledged) === JSON.stringify(log.filter((entry) => entry.kind === "ingress"))
+		);
 	});
-}
-
-/** Runs one step; false when the store crashed under it. Any other error is a real failure. */
-async function stepSurvives(runtime: Runtime): Promise<boolean> {
-	try {
-		await runtime.step();
-		return true;
-	} catch (error: unknown) {
-		if (error instanceof StoreCrashed) {
-			return false;
-		}
-		throw error;
-	}
-}
-
-/** Steps and batches with fresh request ids, as a host sends them. */
-const actionsArbitrary: fc.Arbitrary<readonly Action[]> = fc
-	.array(fc.option(fc.array(fc.constantFrom("j1", "j2"), { minLength: 1, maxLength: 2 })), { maxLength: 6 })
-	.map((choices) => choices.map((tokens, index) => (tokens === null ? "step" : batch(`r${String(index)}`, tokens))));
-
-/** A store fault at one commit: the commit lands and its reply is lost, or it fails and does not land. */
-type Fault = { readonly commit: number; readonly lands: boolean };
-
-const faultArbitrary: fc.Arbitrary<Fault> = fc.record({ commit: fc.nat({ max: 8 }), lands: fc.boolean() });
-
-/**
- * One commit fails: it lands and its reply is lost, or it does not land, and the host cannot tell which. The host
- * retries a batch with the same request id, on the same runtime or on a new one over the same disk, and goes on
- * after a step, since a step has no input. Each batch lands once, the stored log is the model's log of the calls
- * that landed, and each enqueue returned the ingress that the log holds, also after a retry.
- */
-export function retryProperty(
-	factory: RuntimeFactory,
-): fc.IAsyncProperty<[readonly Action[], Fault, boolean, SelectionPolicy]> {
-	return fc.asyncProperty(
-		actionsArbitrary,
-		faultArbitrary,
-		fc.boolean(),
-		policyArbitrary,
-		async (actions, fault, reopen, policy) => {
-			const disk = createDisk(initialState);
-			let time = 0;
-			const options = (store: NetInstanceStore): RuntimeOptions => ({
-				net: contested,
-				store,
-				policy,
-				clock: { now: () => (time += 1) },
-			});
-			const faults = fault.lands ? { loseReplyAtCommit: fault.commit } : { failAtCommit: fault.commit };
-			const first = factory(options(disk.open(faults)));
-			const retryOn = reopen ? (): Runtime => factory(options(disk.open())) : (): Runtime => first;
-			const host = await runHost(first, retryOn, actions);
-			const stored = disk.stored();
-			const recorded = stored.log.filter((entry) => entry.kind === "ingress");
-			return (
-				sameMarking(replayed(stored.log), stored.marking) &&
-				untimed(stored.log) === modelLog(host.landed, policy) &&
-				JSON.stringify(host.acknowledged) === JSON.stringify(recorded)
-			);
-		},
-	);
-}
-
-/** What the host saw: the ingress of each batch, and the calls whose commit landed. */
-type HostRun = { readonly acknowledged: readonly Ingress[]; readonly landed: readonly Action[] };
-
-/** Runs the actions as a host does: it retries a failed batch on `retryOn()` and goes on after a failed step. */
-async function runHost(first: Runtime, retryOn: () => Runtime, actions: readonly Action[]): Promise<HostRun> {
-	let runtime = first;
-	const acknowledged: Ingress[] = [];
-	const landed: Action[] = [];
-	for (const action of actions) {
-		if (action === "step") {
-			landed.push(...((await stepLanded(runtime)) ? [action] : []));
-		} else {
-			const ingress = await runtime.enqueue(action).catch(async (error: unknown) => {
-				unlessStoreFault(error);
-				runtime = retryOn();
-				return runtime.enqueue(action);
-			});
-			acknowledged.push(ingress);
-			landed.push(action);
-		}
-	}
-	return { acknowledged, landed };
-}
-
-/** The test knows what the host cannot: whether a step whose call failed committed. */
-async function stepLanded(runtime: Runtime): Promise<boolean> {
-	try {
-		await runtime.step();
-		return true;
-	} catch (error: unknown) {
-		unlessStoreFault(error);
-		return error instanceof ReplyLost;
-	}
-}
-
-/** A lost reply or a failed commit is the fault under test. Any other error is a real failure. */
-function unlessStoreFault(error: unknown): void {
-	if (!(error instanceof ReplyLost || error instanceof CommitFailed)) {
-		throw error;
-	}
 }
 
 /** Two request ids, each always with the same tokens, so sending one twice is a duplicate delivery. */
-const deliveries: Readonly<Record<string, Batch>> = { r0: batch("r0", ["j1"]), r1: batch("r1", ["j2", "j1"]) };
-
-/** Two to four steps and up to three of the request ids, in any order. */
-function callsArbitrary(requestIds: readonly string[]): fc.Arbitrary<readonly string[]> {
-	const chosen =
-		requestIds.length === 0 ? fc.constant([]) : fc.array(fc.constantFrom(...requestIds), { maxLength: 3 });
-	return fc.tuple(fc.integer({ min: 2, max: 4 }), chosen).chain(([steps, ids]) => {
-		const calls = [...Array.from({ length: steps }, () => "step"), ...ids];
-		return fc.shuffledSubarray(calls, { minLength: calls.length });
-	});
-}
+const deliveries: readonly Batch[] = [batch("r0", ["j1"]), batch("r1", ["j2", "j1"])];
 
 /** Each entry without its time, sorted, so two logs with the same entries in another order compare equal. */
 function untimedSet(entries: readonly LogEntry[]): string {
@@ -233,59 +179,62 @@ function untimedSet(entries: readonly LogEntry[]): string {
 }
 
 /**
- * Concurrent steps and batches, with duplicate deliveries, under every interleaving: the stored marking is the
- * replay of the stored log, the log's occurrences are the acknowledged ones, each acknowledged ingress is in the
- * log, and each request id is there once. A gate for a step defect passes no request ids, so only steps race.
+ * The Session of an instance whose commits take effect only when the scheduler releases them, as over a remote
+ * database, so a read can land between another enqueue's start and its commit.
+ */
+function scheduledHost(scheduler: fc.Scheduler, harness: Harness): NetInstanceHost {
+	return {
+		commit: (change, callContext) =>
+			scheduler.schedule(Promise.resolve(), "commit").then(() => harness.commit(change, callContext)),
+		snapshot: harness.snapshot.bind(harness),
+	};
+}
+
+/**
+ * Up to four enqueues of the two deliveries, duplicates included, each started at a time the scheduler chooses, with
+ * commits that the scheduler releases, so they run at once in any order. At every commit the marking is the replay
+ * of the log and the net is quiet; each acknowledged ingress is in the log, and each request id is there once; and
+ * the log's occurrences are what the enqueues returned as fired, together.
  */
 export function raceProperty(
 	factory: RuntimeFactory,
-	requestIds: readonly string[] = Object.keys(deliveries),
-): fc.IAsyncProperty<[fc.Scheduler, readonly string[], SelectionPolicy]> {
+): fc.IAsyncProperty<[fc.Scheduler, readonly Batch[], SelectionPolicy]> {
 	return fc.asyncProperty(
 		fc.scheduler(),
-		callsArbitrary(requestIds),
+		fc.array(fc.constantFrom(...deliveries), { minLength: 1, maxLength: 4 }),
 		policyArbitrary,
-		async (scheduler, calls, policy) => {
-			const disk = createDisk(initialState);
-			const store = scheduledStore(scheduler, disk.open());
-			const runtime = factory({ net: contested, store, policy, clock: fixedClock });
-			const { steps, enqueues } = issue(runtime, calls);
-			const [stepped, ingresses] = await scheduler.waitFor(Promise.all([Promise.all(steps), Promise.all(enqueues)]));
-			return raceHolds(disk.stored(), stepped, ingresses, new Set(calls.filter((call) => call !== "step")).size);
+		async (scheduler, sent, policy) => {
+			const clock = createClock();
+			const runtime = factory(contestedOptions(policy, clock));
+			const disk = createDisk([runtime.extension], clock);
+			let committed: readonly Committed[] = [];
+			const outcome = await inProcess(disk, {}, async ({ harness }) => {
+				const host = scheduledHost(scheduler, harness);
+				const instance = runtime.instance(host, (await harness.root(context)).id);
+				const enqueues = sent.map((delivery) =>
+					scheduler
+						.schedule(Promise.resolve(), delivery.requestId)
+						.then(() => instance.enqueue(delivery, context)),
+				);
+				committed = await scheduler.waitFor(Promise.all(enqueues));
+			});
+			const distinctIds = new Set(sent.map((delivery) => delivery.requestId)).size;
+			return (
+				outcome === "done" &&
+				everyCommitHeld(contested, policy, disk.history()) &&
+				raceHeld(disk.history(), committed, distinctIds)
+			);
 		},
 	);
 }
 
-/** Starts every call at once, in the order given. */
-function issue(
-	runtime: Runtime,
-	calls: readonly string[],
-): { readonly steps: readonly Promise<Stepped>[]; readonly enqueues: readonly Promise<Ingress>[] } {
-	const steps: Promise<Stepped>[] = [];
-	const enqueues: Promise<Ingress>[] = [];
-	for (const call of calls) {
-		const delivery = deliveries[call];
-		if (delivery === undefined) {
-			steps.push(runtime.step());
-		} else {
-			enqueues.push(runtime.enqueue(delivery));
-		}
-	}
-	return { steps, enqueues };
-}
-
-function raceHolds(
-	stored: NetInstanceState,
-	stepped: readonly Stepped[],
-	ingresses: readonly Ingress[],
-	distinctIds: number,
-): boolean {
-	const recorded = stored.log.filter((entry) => entry.kind === "ingress").map((entry) => JSON.stringify(entry));
+function raceHeld(history: readonly NetInstanceState[], committed: readonly Committed[], distinctIds: number): boolean {
+	const { log } = lastState(history);
+	const recorded = log.filter((entry) => entry.kind === "ingress").map((entry) => JSON.stringify(entry));
 	return (
-		sameMarking(replayed(stored.log), stored.marking) &&
-		untimedSet(stepped.flatMap((result) => result.fired)) ===
-			untimedSet(stored.log.filter((entry) => entry.kind === "occurrence")) &&
-		ingresses.every((ingress) => recorded.includes(JSON.stringify(ingress))) &&
-		recorded.length === distinctIds
+		committed.every(({ ingress }) => recorded.includes(JSON.stringify(ingress))) &&
+		recorded.length === distinctIds &&
+		untimedSet(committed.flatMap(({ fired }) => fired)) ===
+			untimedSet(log.filter((entry) => entry.kind === "occurrence"))
 	);
 }

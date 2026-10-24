@@ -3,7 +3,7 @@ import type { Marking, Token } from "@petrus/petri-net";
 import { definitionOrder, tokenKey, tokensAt, transitionId } from "@petrus/petri-net";
 import type { Runtime } from "@petrus/runtime";
 import { busyPlaceId, createRuntime } from "@petrus/runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import type { Table } from "../src/dining-philosophers.ts";
 import {
 	diningPhilosophers,
@@ -15,8 +15,7 @@ import {
 	leftFork,
 	seat,
 } from "../src/dining-philosophers.ts";
-import type { HistoryDisk } from "./disk.ts";
-import { Crashed, historyDisk } from "./disk.ts";
+import { clock, context, createDisk, runToEnd } from "./disk.ts";
 import { flush } from "./flush.ts";
 
 const eating = busyPlaceId(transitionId("eat"));
@@ -63,13 +62,14 @@ function sharedTable(size: number, pause: (philosopher: Token) => Promise<void>)
 	};
 }
 
-function runtimeOn(disk: HistoryDisk, size: number, table: Table, dieAt?: number): Runtime {
+function runtimeOf(size: number, table: Table): Runtime {
 	return createRuntime({
+		name: "dining-philosophers",
 		net: diningPhilosophers,
-		store: disk.open(dieAt),
 		policy: definitionOrder,
-		clock: { now: () => 0 },
+		clock,
 		handlers: diningPhilosophersHandlers(size, table),
+		retryDelayMs: 0,
 	});
 }
 
@@ -105,13 +105,13 @@ function diners(marking: Marking): readonly Token[] {
 describe("dining philosophers", () => {
 	test("lets philosophers who are not neighbours eat in the same step, and gives every fork back", async () => {
 		const meals = ["p0", "p1", "p2", "p3", "p4"];
-		const disk = historyDisk({ marking: initialMarking(5, meals), log: [] });
+		const disk = createDisk();
 		const table = sharedTable(5, () => Promise.resolve());
-		await runtimeOn(disk, 5, table).settle();
-		expect(diners(disk.history()[1]?.marking ?? {})).toStrictEqual(["p0", "p2"]);
-		expect(sortedKeys(tokensAt(disk.last().marking, fed.id))).toBe(sortedKeys(meals));
-		expect(sortedKeys(tokensAt(disk.last().marking, forks.id))).toBe(sortedKeys(["f0", "f1", "f2", "f3", "f4"]));
-		expect(tokensAt(disk.last().marking, hungry.id)).toStrictEqual([]);
+		await runToEnd(disk, runtimeOf(5, table), initialMarking(5, meals), undefined);
+		expect(diners(disk.history()[0] ?? {})).toStrictEqual(["p0", "p2"]);
+		expect(sortedKeys(tokensAt(disk.last(), fed.id))).toBe(sortedKeys(meals));
+		expect(sortedKeys(tokensAt(disk.last(), forks.id))).toBe(sortedKeys(["f0", "f1", "f2", "f3", "f4"]));
+		expect(tokensAt(disk.last(), hungry.id)).toStrictEqual([]);
 		expect(table.overlaps()).toStrictEqual([]);
 	});
 
@@ -126,22 +126,19 @@ describe("dining philosophers", () => {
 			fc.asyncProperty(
 				fc.scheduler(),
 				table,
-				fc.option(fc.nat({ max: 20 }), { nil: undefined }),
-				async (scheduler, { size, seats }, dieAt) => {
+				fc.option(fc.nat({ max: 16 }), { nil: undefined }),
+				async (scheduler, { size, seats }, crashAt) => {
 					const meals = seats.map((index) => `p${String(index)}`);
-					const disk = historyDisk({ marking: initialMarking(size, meals), log: [] });
+					const disk = createDisk();
 					const shared = sharedTable(size, () => scheduler.schedule(Promise.resolve(), "meal"));
-					await scheduler.waitFor(runtimeOn(disk, size, shared, dieAt).settle()).catch((error: unknown) => {
-						if (!(error instanceof Crashed)) {
-							throw error;
-						}
-						return scheduler.waitFor(runtimeOn(disk, size, shared).settle());
-					});
+					await runToEnd(disk, runtimeOf(size, shared), initialMarking(size, meals), crashAt, (settling) =>
+						scheduler.waitFor(settling),
+					);
 					return (
-						disk.history().every((state) => eachForkOnce(state.marking, size)) &&
+						disk.history().every((state) => eachForkOnce(state, size)) &&
 						shared.overlaps().length === 0 &&
-						tokensAt(disk.last().marking, hungry.id).length === 0 &&
-						sortedKeys(tokensAt(disk.last().marking, fed.id)) === sortedKeys(meals) &&
+						tokensAt(disk.last(), hungry.id).length === 0 &&
+						sortedKeys(tokensAt(disk.last(), fed.id)) === sortedKeys(meals) &&
 						sortedKeys([...shared.meals().values()]) === sortedKeys(meals)
 					);
 				},
@@ -151,7 +148,7 @@ describe("dining philosophers", () => {
 
 	test("lets a philosopher starve while both neighbours take turns, because definitionOrder keeps no state", async () => {
 		const meals = ["p0", "p1", "p2", "p3", "p0", "p2", "p0", "p2"];
-		const disk = historyDisk({ marking: initialMarking(4, meals), log: [] });
+		const disk = createDisk();
 		const waiting: (() => void)[] = [];
 		const table = sharedTable(
 			4,
@@ -160,7 +157,10 @@ describe("dining philosophers", () => {
 					waiting.push(resolve);
 				}),
 		);
-		const settled = runtimeOn(disk, 4, table).settle();
+		const process = await disk.open(runtimeOf(4, table));
+		onTestFinished(() => process.close());
+		await process.instance.enqueue({ requestId: "first", tokens: initialMarking(4, meals) }, context);
+		const settled = process.settle();
 		const seen: (readonly Token[])[] = [];
 		for (const _meal of meals) {
 			await flush();

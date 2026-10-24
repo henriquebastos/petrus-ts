@@ -29,6 +29,15 @@ export function startedOperations(handlers: ReadonlySet<TransitionId>, log: read
 	);
 }
 
+/** The operations that the log entries from index `from` on started: the work that the commit of those entries begins. */
+export function operationsStartedFrom(
+	handlers: ReadonlySet<TransitionId>,
+	log: readonly LogEntry[],
+	from: number,
+): readonly Operation[] {
+	return startedOperations(handlers, log).slice(startedOperations(handlers, log.slice(0, from)).length);
+}
+
 /** The started operations whose result the log does not hold: work that runs now, or must run again after a restart. */
 export function operationsInFlight(
 	handlers: ReadonlySet<TransitionId>,

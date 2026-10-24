@@ -1,28 +1,39 @@
 # @petrus/runtime
 
-Runs one net instance over a store. An enqueue adds a batch of tokens from outside under the host's request id; a
-retry with the same id adds nothing, and the same id with other tokens throws. A step selects the binding elements to fire with a selection policy, fires
-them together, and commits the new marking and its occurrences in one commit. Time comes from an injected clock,
-and calls run one at a time.
+Runs net instances on Pi Durable, one net instance per conversation. An enqueue adds a batch of tokens from outside
+under the host's request id, and steps the net until the selection policy selects nothing, in the same commit. A
+retry with the same id adds nothing, and the same id with other tokens throws. Time comes from an injected clock.
 
 ```ts
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { definitionOrder } from "@petrus/petri-net";
 import { createRuntime } from "@petrus/runtime";
 
-const runtime = createRuntime({ net, store, policy: definitionOrder, clock: { now: () => Date.now() } });
-await runtime.enqueue({ requestId: `comment:${String(comment.comment)}`, tokens: { [comments.id]: [comment] } });
-const stepped = await runtime.step();
-// stepped.fired lists the occurrences it committed; an empty list means nothing was enabled and nothing was committed
+const clock = { now: () => Date.now() };
+const runtime = createRuntime({ name: "comment-replies", net, policy: definitionOrder, clock, retryDelayMs: 1_000 });
+const registry = createRegistry();
+registry.install(runtime.extension);
+const harness = await Harness.open(storage, { models, registry, now: clock.now }, BACKGROUND_CONTEXT);
+harness.resume(); // no task runs before this call; waitForIdle or waitForTask waits for tasks
+const instance = runtime.instance(harness, (await harness.root(BACKGROUND_CONTEXT)).id);
+const batch = { requestId: `comment:${String(comment.comment)}`, tokens: { [comments.id]: [comment] } };
+const { ingress, fired } = await instance.enqueue(batch, BACKGROUND_CONTEXT);
+// fired lists the occurrences of the commit; a batch sent again returns the recorded ingress and fires nothing
 ```
 
 The request id names the fact (here a comment), not the delivery that brought it, so a redelivery and a poll of
 the same comment are one batch. See section 2 of
 [examples/comment-replies/README.md](../../examples/comment-replies/README.md).
 
-A handler transition starts work outside the net, such as a call to a service. `settle` runs each handler,
-records its result under the operation's id, and steps until the net is quiet; after a crash it runs the work in
-flight again, and each result counts once.
+A handler transition starts work outside the net, such as a call to a service. Each operation runs as a Durable
+task. The task runs the handler, records the result under the operation's id, and steps the net until it is quiet.
+After a crash the task runs the handler again, and each result counts once.
+
+Pi Durable stores the net instances and runs the operations; it is infrastructure. Modules and exported names use
+the words of Petrus: net instance, operation, handler, commit, step. The words of Durable and Chord (document, task,
+Session, `Context`) appear only where the code calls them.
 
 - [docs/spec.md](docs/spec.md): terms, guarantees, failures and limits, each with the test that proves it.
-- [docs/handlers.md](docs/handlers.md): handler transitions, operations and `settle`, with the same structure.
+- [docs/handlers.md](docs/handlers.md): handler transitions, operations and their tasks, with the same structure.
 - [api/runtime.api.md](api/runtime.api.md): the public signatures. `pnpm lint:api` keeps it current.

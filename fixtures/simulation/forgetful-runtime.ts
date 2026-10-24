@@ -1,12 +1,32 @@
-// Planted defect: steps report what they fired but never commit, so the store keeps its initial state.
-import type { Runtime, RuntimeOptions, Stepped } from "../../packages/runtime/src/index.ts";
-import { advance } from "../../packages/runtime/src/advance.ts";
-import { createRuntime } from "../../packages/runtime/src/runtime.ts";
+// Planted defect: an enqueue plans its commit and returns what the plan fired, but writes nothing, so storage never
+// holds a batch that the host was told landed.
+import type { Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
+import { createRuntime } from "../../packages/runtime/src/index.ts";
+import { admit } from "../../packages/runtime/src/admit.ts";
+import { netInstanceRecord } from "../../packages/runtime/src/net-instance-record.ts";
+import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
+import { checkedState, plan } from "../../packages/runtime/src/net-instance-commit.ts";
 
 export function createForgetfulRuntime(options: RuntimeOptions): Runtime {
+	const runtime = createRuntime(options);
+	const parts: NetInstanceParts = {
+		name: options.name,
+		net: options.net,
+		policy: options.policy,
+		handlerIds: new Set(),
+		start: () => Promise.resolve(),
+	};
 	return {
-		...createRuntime(options),
-		step: async (): Promise<Stepped> =>
-			advance(options.net, options.policy, await options.store.load(), options.clock.now()),
+		extension: runtime.extension,
+		instance: (host, conversationId) => ({
+			...runtime.instance(host, conversationId),
+			enqueue: (batch, context) =>
+				host.commit(async (tx) => {
+					const at = options.clock.now();
+					const state = checkedState(parts, await tx.doc(netInstanceRecord, conversationId));
+					const planned = plan(parts, state, admit(options.net, state, batch, at), at);
+					return { ingress: planned.ingress, fired: planned.kind === "applied" ? planned.fired : [] };
+				}, context),
+		}),
 	};
 }

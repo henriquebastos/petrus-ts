@@ -2,110 +2,115 @@
 
 The core rule:
 
-> A step loads the net instance, selects a step with the policy, fires it, and commits the new marking with its
-> occurrences in one atomic commit. An enqueue adds a batch of tokens from outside and commits it with its ingress
-> and request id in one atomic commit; a request id is applied once. Steps and enqueues of one runtime run one at a
-> time, and each is acknowledged only after its commit lands.
+> A change to a net instance is an enqueue or an operation's result. Each change is one atomic commit: it reads the
+> net instance, applies the change, steps the net until the policy selects nothing, writes the result, and creates a
+> task for each operation that its steps started. A request id is applied once. A call is acknowledged only after
+> its commit lands.
 
 ## 1 Terms
 
-- A **net instance** is one run of a net. Its **state** is a marking and a log.
+- A **net instance** is one run of a net. Its **state** is a marking and a log. One Durable conversation holds one
+  net instance.
 - The **log** records, in commit order, each change to the marking: an occurrence or an ingress. Replaying it from
-  the first marking gives the current marking.
-- An **occurrence** records one committed binding element (the transition and its binding) and the time from the
-  clock. The occurrences of one step share the time and are in firing order, so replaying them one by one with
-  `fire` gives the step's tokens (see the petri-net spec).
+  no tokens gives the marking.
+- An **occurrence** records one committed binding element and its time. The occurrences of one step share the
+  time and are in firing order, so replaying them one by one with `fire` gives the step's tokens.
 - A **batch** is a set of tokens, given as a marking, that a host adds from outside under its own **request id**.
-  An **ingress** records one applied batch, its request id, and the time. The host chooses the id so that a retry
-  of the same input, or a second delivery of it, has the same id.
-- A **store** keeps the state of one net instance. `load` returns the last committed state; the first state it
-  holds is the initial marking. `commit` is atomic: after a crash the store holds the old state or the new state,
-  never a part of each.
-- A **step** takes no input. It calls `fireStep` from the petri-net package with the runtime's **selection policy**:
-  the policy orders and filters the enabled binding elements, and allocation fires each one whose tokens are still
-  free (Jensen's step). See the petri-net spec.
-- The **clock** is the only source of time. The runtime takes it as an option.
-- **`advance`** (in `src/advance.ts`) and **`admit`** (in `src/admit.ts`) are the pure parts of a step and of an
-  enqueue. They take the state and a time. `advance` returns the next state; `admit` returns the next state, or the
-  recorded ingress when the log holds the request id. The runtime adds only the effects: load, commit, and one call
-  at a time.
-- A **handler transition** starts work outside the net, and its result comes back as tokens. See
-  [handlers.md](handlers.md) for handlers, operations, `complete` and `settle`.
+  An **ingress** records one applied batch, its request id, and the time. A retry of the same input, or a second
+  delivery of it, has the same id. A new net instance has no tokens, so its first marking comes from an ingress.
+- A **commit** is one Durable commit. The runtime stores a net instance as one Durable document of kind
+  `petrus.net-instance` in its conversation. The document keeps only its latest value: the log is the history. A
+  fork of the conversation starts with no net instance.
+- A **step** calls `fireStep` from the petri-net package with the runtime's **selection policy** (Jensen's step;
+  see the petri-net spec). A commit steps until the policy selects nothing, so the net is **quiet** after each
+  commit. One commit fires at most `stepLimit` (1,000) steps.
+- The **clock** is the only source of time. An enqueue reads the clock option inside its commit. A handler task takes
+  its time from the Harness, so the host gives the Harness the same clock as `now`.
+- `createRuntime({ name, net, policy, clock, handlers, retryDelayMs })` returns `{ extension, instance }`. Each
+  runtime of a Harness needs its own `name`: Durable's registry replaces an extension of the same name silently.
+  The host installs `extension` in the registry before `Harness.open`.
+  `instance(harness, conversationId)` returns the `NetInstance` of that conversation.
+- `NetInstance.enqueue(batch, context)` returns `{ ingress, fired }`: the ingress, and what the commit's steps
+  fired. `state(context)` returns the committed state. `inFlight(context)` lists the operations
+  in flight (see [handlers.md](handlers.md)).
+- The pure parts take a state and a time: `advanceUntilQuiet` in `src/advance.ts`, `admit` in `src/admit.ts`, and
+  `plan` in `src/net-instance-commit.ts`. The runtime adds the effects inside one commit: the read, the write, and
+  the new tasks.
 
 ## 2 Guarantees
 
-Each guarantee names the test that proves it. Paths are relative to this package.
+Paths are relative to this package.
 
-- `advance` appends the step's occurrences, stamped with the given time, and returns the same state when nothing
-  fires. Tests: `test/advance.test.ts` "appends the step's occurrences to the log, each stamped with the given time",
-  "returns the same state when nothing fires, so the runtime commits nothing".
-- `admit` adds a new batch's tokens after the tokens already on each place and appends its ingress. For a request
-  id that the log holds with the same tokens, it returns the recorded ingress and no new state. The order of places
-  does not count; the order of tokens on a place does. Tests: `test/admit.test.ts` "applies a new batch: adds its
-  tokens after the tokens already there and appends its ingress", "returns the recorded ingress for a request id the
+- `advanceUntilQuiet` steps until the policy selects nothing, stamps each occurrence with the given time, and
+  appends the occurrences in firing order. It throws when the net can still fire after `stepLimit` steps. Tests:
+  `test/advance.test.ts` "steps until the policy selects nothing and returns every occurrence in firing order",
+  "fires up to stepLimit steps, and throws for a net that can still fire after them, which is a bug in the net".
+- `admit` adds a new batch's tokens after the tokens on each place and appends its ingress. For a request id that
+  the log holds with the same tokens, it returns the recorded ingress. The order of places does not count; the
+  order of tokens on a place does. Tests: `test/admit.test.ts` "applies a new batch: adds its tokens after the
+  tokens already there and appends its ingress", "returns the recorded ingress for a request id the
   log holds, whatever the order of its places", "counts the order of tokens on a place, so the same id with the
   tokens reordered is other tokens".
-- A step commits the marking and its occurrences together, and stamps the occurrences with the clock.
-  Test: `test/runtime.test.ts` "commits the new marking and the step's occurrences together, stamped by the clock".
-- An enqueue commits the batch's tokens and its ingress together, and stamps the ingress with the clock.
-  Test: `test/runtime.test.ts` "enqueues a batch: commits its tokens and its ingress together, stamped by the clock".
+- `plan` steps a new change until the net is quiet and starts only the operations of its own steps.
+  Test: `test/net-instance-commit.test.ts` "steps a new change until the net is quiet and starts only the
+  operations that its own steps started".
+- A conversation with no net instance has no tokens and an empty log.
+  Test: `test/runtime.test.ts` "a conversation with no instance has no tokens, an empty log and nothing in flight".
+- One commit holds a batch's ingress and the occurrences of all its steps, stamped by the clock. Tests:
+  `test/runtime.test.ts` "the first enqueue gives the first tokens, and one commit holds its ingress and the steps'
+  occurrences, stamped by the clock", "a commit steps until the net is quiet: a policy that fires one element a
+  step still fires them all".
 - The policy decides which binding element gets a contested token.
   Test: `test/runtime.test.ts` "lets the policy decide which transition takes a contested token".
-- A step that fires nothing commits nothing.
-  Test: `test/runtime.test.ts` "fires nothing and commits nothing when nothing is enabled".
-- After a crash at any commit and a reopen that runs the remaining steps, the stored marking is the replay of the
-  stored log, and the log is the log of the pure `fireStep` run step by step. The property draws the policy.
-  Test: `test/runtime.test.ts` "stays consistent after a crash at any commit and a reopen",
-  with `crashCutProperty` in `test/properties.ts`.
-- When one commit fails, whether it landed (a lost reply) or not, a host that retries the batch with the same
-  request id adds it once and gets the recorded ingress back. This holds when the retry goes to a new runtime over
-  the same store, because the runtime looks request ids up in the stored log, not in memory. A step needs no retry:
-  it has no input, so the next step goes on from the committed state, and the log holds what any step fired.
-  Tests: `test/runtime.test.ts` "a retry after a lost reply returns the recorded ingress and adds nothing";
-  "adds each batch once when a commit fails or its reply is lost and the host retries with the same request id",
-  with `retryProperty` in `test/properties.ts`.
-- Under any order in which the store answers, with concurrent steps and enqueues and with the same batch delivered
-  twice, the stored marking is the replay of the stored log, the log's occurrences are the acknowledged ones, each
-  acknowledged ingress is in the log, and each request id is there once.
-  Test: `test/runtime.test.ts` "loses no acknowledged step or batch under any interleaving", with `raceProperty` in `test/properties.ts`.
-- A failed commit does not block the next step.
-  Test: `test/runtime.test.ts` "a failed commit does not block the next step".
+- A batch sent again returns the recorded ingress and commits nothing, also on a new process after a crash: the
+  runtime looks request ids up in the stored log. Tests: `test/runtime.test.ts` "a batch sent again returns the
+  recorded ingress, fires nothing and commits nothing", "after a crash right after the commit landed, the batch
+  sent again on a new process returns the recorded ingress".
+- A process dies before or after any of its commits lands, and a new process sends every batch again. At every
+  commit the marking is the replay of the log and the net is quiet. Each batch is in the log once, and the log is
+  that of the pure `fireStep` run. The property draws the policy. Test: `test/runtime.test.ts` "adds each batch
+  once and leaves every commit quiet when a crash cuts any commit and the host sends every batch again", with
+  `crashProperty` in `test/properties.ts`.
+- Up to four enqueues of two batches, duplicates included, run at once, and their commits land in any order. The
+  same holds at every commit. Each acknowledged ingress is in the log, and each request id is there once. A commit
+  reads the net instance inside itself, so it never writes over another commit's change. Test:
+  `test/runtime.test.ts` "loses no acknowledged batch and adds each request id once under any order of concurrent
+  enqueues", with `raceProperty` in `test/properties.ts`.
 
-A change to the runtime, or a new kind of call, must keep `crashCutProperty`, `retryProperty` and `raceProperty`
-green.
+The simulation gate of the repository shows that the two properties fail on four
+planted defects: an enqueue that writes nothing (`fixtures/simulation/forgetful-runtime.ts`), a batch and its
+steps in two commits (`fixtures/simulation/split-commit-runtime.ts`), an enqueue that ignores the stored request
+ids (`fixtures/simulation/id-blind-runtime.ts`), and a change made from a read outside the commit
+(`fixtures/simulation/stale-read-runtime.ts`).
 
 ## 3 Failures
 
-A step and an enqueue have no expected failure. Everything below is a bug or an infrastructure failure, so the
-call rejects. Only a store failure can leave a commit behind.
+An enqueue has no expected failure. Each case below is a bug or an infrastructure failure, so the call rejects.
+Only a storage failure can leave a commit behind.
 
-- A store failure: the call rejects with the store's error. The commit may have landed, as after a lost reply, or
-  not. The host retries a batch with the same request id and goes on after a step (see section 2), and the next
-  call runs. Tests: `test/runtime.test.ts` "a failed commit does not block the next step", "a retry after a lost
-  reply returns the recorded ingress and adds nothing".
-- A bug in the net that `fireStep` throws, such as an output token outside its colour set.
-  Test: `test/runtime.test.ts` "rejects a step whose net throws, and commits nothing".
-- A policy that names a transition outside the net.
-  Test: `test/runtime.test.ts` "rejects a step whose policy names a transition outside the net, and commits nothing".
-- A batch that does not fit the net (see `markingProblems`): the message names every problem. This holds also for a
-  retry whose request id the log holds.
-  Tests: `test/runtime.test.ts` "rejects a batch that does not fit the net, which is a bug in the host, and commits
-  nothing"; `test/admit.test.ts` "refuses a batch that does not fit the net, which is a bug in the host, and names
-  every problem", "refuses a batch that does not fit the net, even under a recorded request id".
-- A request id that the log holds with other tokens: the host gave one id to two inputs.
+- A storage failure or a crash: the commit may have landed or not. The host sends the batch again with the same
+  request id: section 2 shows that a batch sent again adds nothing.
+- A net that throws, a policy that names a transition outside the net, or a net that can still fire after
+  `stepLimit` steps: nothing is committed. Tests: `test/runtime.test.ts` "rejects an enqueue whose net throws, and
+  commits nothing", "rejects an enqueue whose policy names a transition outside the net, and commits nothing",
+  "refuses a net that can still fire after stepLimit steps, which is a bug in the net, and commits nothing".
+- A batch that does not fit the net (see `markingProblems`), also under a recorded request id: the message names
+  every problem. Tests: `test/runtime.test.ts` "rejects a batch that does not fit the net, which is a bug in the
+  host, and commits nothing"; `test/admit.test.ts` "refuses a batch that does not fit the net, even under a
+  recorded request id".
+- A request id that the log holds with other tokens.
   Test: `test/admit.test.ts` "refuses a request id that the log holds with other tokens, which is a bug in the host".
-- A stored marking with a problem from `markingProblems`: the call names every problem.
-  Test: `test/runtime.test.ts` "rejects a step and an enqueue when the stored marking does not fit the net, which is a bug in the store".
-- `createRuntime` throws when `netProblems` reports a problem, and the message names every problem.
+- A conversation that holds an instance of another net, or a stored marking that does not fit the net: `state`
+  and `enqueue` reject. Tests: `test/runtime.test.ts` "refuses a conversation that holds an instance of another
+  net, which is a bug in the host", "refuses a stored marking that does not fit the net, which is a bug in the
+  store".
+- `createRuntime` throws when `netProblems` reports a problem, and names every problem.
   Test: `test/runtime.test.ts` "refuses a net with problems, which is a bug in the caller, and names every problem".
 
 ## 4 Limits
 
-- An enqueue does not step. The host calls `step` until it fires nothing, or `settle`.
-- The store contract assumes that `commit` settles only when the write has landed or never will, and that one
-  runtime at a time uses a store. A store with client timeouts, or two runtimes over one store, needs a
-  conditional commit, which does not exist yet.
-- The log keeps every request id, and an enqueue searches the whole log, so its cost grows with the log.
+- A second net in the conversation of a net instance finds that instance, so its calls reject.
+- A net that does not become quiet in 1,000 steps cannot be enqueued: each enqueue throws and commits nothing.
+- The log keeps every request id. Each commit reads the whole log, so its cost grows with the log.
 - The policy has no state of its own, so a policy that needs memory, such as fairness across steps, cannot be
-  written yet.
-- The only store is the test store in `test/controlled-store.ts`.
+  written.

@@ -10,8 +10,12 @@ delay of its timed form in Fig. 14. The nets are their usual Petri-net forms, wi
 as a handler.
 
 Each net is a file in `src/` with its handlers over a port to the outside service. Its test in `test/` runs it
-with a fake service, a fast-check scheduler that ends the work in any order, and a store that keeps every
-committed state (`test/disk.ts`), so the invariant is checked at each commit.
+with a fake service and a fast-check scheduler that ends the work in any order. The runtime runs on Pi Durable:
+the first enqueue gives the net its first tokens, each commit steps the net until nothing fires, and each piece of
+work runs as a Durable task. `test/disk.ts` keeps Durable's storage in memory, records the marking of every commit
+that lands, and can kill a process at any storage commit; then a new process, with a new Harness over the same
+storage, enqueues the same batch again (it adds nothing when it landed) and runs the tasks until none is left. So
+the invariant is checked at each commit.
 
 ## 1 Producer and consumer with a bounded buffer
 
@@ -25,8 +29,8 @@ has room for `capacity` items; each free slot is a token on `free`.
   `used` and gives the slot back.
 
 At every commit, `free + produce:busy + buffer + consume:busy = capacity`, and each order is in one stage:
-`orders + produce:busy + buffer + consume:busy + used` is the number of orders. After a settle, and after a crash
-at any commit and a settle on a new runtime, every item is used once and every slot is free.
+`orders + produce:busy + buffer + consume:busy + used` is the number of orders. When no task is left, also after
+a crash at any commit and a run of a new process, every item is used once and every slot is free.
 Test: `test/producer-consumer.test.ts` "keeps the buffer bounded and each order in one stage at every commit,
 under any order of work and a crash at any commit".
 
@@ -78,7 +82,7 @@ the place `Sent` and the handler transition `Wait` are added for the timer.
   work takes.
 
 At every commit `DataReceived` is the data of the packets before `NextRec`, so the receiver gets the data once
-and in order. After a settle, and after a crash at any commit and a settle on a new runtime, all data is
+and in order. When no task is left, also after a crash at any commit and a run of a new process, all data is
 received and acknowledged, and no message or work is left. Tests: `test/simple-protocol.test.ts` "holds a sent
 packet until its timer runs out, and then sends it again if the network lost it" and "the receiver gets the data
 once and in order, under any losses, any order of messages and timers, and a crash at any commit".
@@ -88,13 +92,15 @@ it allows this.
 
 ## 5 Limits
 
-- The tests crash the store at a commit. In mutual exclusion no commit lands while a process is inside, so a
-  crash at a commit never stops work in progress there. A real process can also die between commits, while its
-  handler is in the resource. Then the next settle runs the same operation again, and the next process enters
-  after that run ends. If the first run's work goes on outside after the process died, as a remote call can, two
+- The tests crash the storage at a commit. In mutual exclusion no commit lands while a process is inside: the
+  commit that marks a task running lands before its handler enters, and the next commit is the handler's result.
+  So a crash at a commit never stops work in progress there. A real process can also die between commits, while
+  its handler is in the resource. Then the next Harness runs the same operation's task again, and the next process
+  enters after that run ends. If the first run's work goes on outside after the process died, as a remote call can, two
   holders are inside at once. A resource that can outlive the process that called it needs a lease or a fence
   keyed by the operation id. The same holds for a meal and its forks. No test covers this case.
-- A handler has no abort. A process that never leaves holds the resource token for ever.
+- A handler has no abort that gives the resource token back: aborting its task leaves the operation in flight.
+  A process that never leaves holds the resource token for ever.
 - A philosopher can starve. EWD 310 says that taking both forks at once leaves "a particular philosopher being
   starved to death by a conspiration of his two neighbours". If the two neighbours take turns, one of them always
   holds a fork that the philosopher between them needs. `definitionOrder` keeps no state, so it cannot hold a
@@ -102,6 +108,6 @@ it allows this.
   philosopher starve while both neighbours take turns, because definitionOrder keeps no state".
 - The timer does not survive a crash. After a crash the wait of a sent packet starts again, so the packet is sent
   again later than planned. The protocol allows a late send.
-- A net that can fire for ever never settles. In the paper's untimed net, `SendPacket` puts the packet straight
-  back on `PacketsToSend`, so it can fire in every step and `settle` would not return. The timer lets this net
-  settle.
+- A net that can fire for ever never becomes quiet. In the paper's untimed net, `SendPacket` puts the packet
+  straight back on `PacketsToSend`, so it can fire in every step, and a commit throws after 1,000 steps. The timer
+  lets each commit of this net end.

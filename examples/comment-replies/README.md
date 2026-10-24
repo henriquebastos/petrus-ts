@@ -1,17 +1,18 @@
 # Example: comment replies
 
 A small host app on Petrus, and a reference for agents that build one. It reads GitHub webhook deliveries, turns
-each into a batch of tokens, enqueues it, and steps the net until nothing fires. It owes one reply to each new
-comment on an opened pull request. It posts nothing: the replies stay as tokens, so the example needs no GitHub
-access and no token.
+each into a batch of tokens, and enqueues it; the commit of the batch steps the net until nothing fires. It owes
+one reply to each new comment on an opened pull request. It posts nothing: the replies stay as tokens, so the
+example needs no GitHub access and no token.
 
 ```sh
-node examples/comment-replies/src/main.ts /tmp/state.json examples/comment-replies/sample/*.json
+node examples/comment-replies/src/main.ts /tmp/comment-replies-state examples/comment-replies/sample/*.json
 ```
 
-Each line of output names a delivery and how many binding elements fired. The last line is the marking. Run the
-command again with the same deliveries: the state does not change. A run that fails, for example on a bad file,
-stops; run it again after the fix, and the request ids make the repeated deliveries safe.
+The first argument is a directory, where Pi Durable keeps the state as JSONL files. Each line of output names a
+delivery and how many binding elements its commit fired. The last line is the marking. Run the command again with
+the same deliveries: the state does not change. A run that fails, for example on a bad file, stops; run it again
+after the fix, and the request ids make the repeated deliveries safe.
 
 ## 1 The parts
 
@@ -20,11 +21,11 @@ stops; run it again after the fix, and the request ids make the repeated deliver
   and its pull request's resource token, adds a reply and gives the token back.
 - `src/deliveries.ts`: the edge. It checks the untrusted payload against a schema of only the fields it reads and
   makes a `Batch`, or says why it ignores the delivery.
-- `src/host.ts`: `handleDelivery` enqueues the batch and steps until a step fires nothing.
-- `src/file-store.ts`: a `NetInstanceStore` that keeps the state in one JSON file. It writes a temporary file,
-  flushes it, renames it over the old file and flushes the folder, so after a crash or a power loss the file holds
-  the old state or the new one. It checks what it reads against a schema.
-- `src/main.ts`: the composition root. It is the only file that reads the system clock and the arguments.
+- `src/host.ts`: `handleDelivery` enqueues the batch into a net instance and returns what its commit fired.
+- `src/main.ts`: the composition root. It is the only file that reads the system clock and the arguments. It opens
+  Durable's JSONL storage in the state directory, installs the runtime's extension in a registry, opens a Harness
+  with the same clock, takes the net instance in the root conversation, handles each delivery, prints the marking
+  and closes the Harness.
 
 ## 2 Choosing the request id
 
@@ -48,20 +49,24 @@ two arrivals of one fact must get one id, and two facts must never share one.
 ## 3 What the example shows
 
 - A resource token admits one binding element per step. Two comments on one pull request are answered in two
-  steps: allocation gives the token to the first comment, and the token that `answer` gives back is new in that
-  step. Test: `test/host.test.ts` "answers one comment per pull request per step, because the resource token is held for the step".
+  steps of one commit: allocation gives the token to the first comment, and the token that `answer` gives back is
+  new in that step. Test: `test/host.test.ts` "answers one comment per pull request per step, because the resource token is held for the step".
 - The edge ignores what it does not read: a comment on an issue, another event, a payload that does not match.
   Test: `test/host.test.ts` "ignores a comment on an issue, another event, and a payload that does not match".
-- A new store over the same file reads what the last commit wrote, and a file that does not match the schema is
-  refused.
-  Tests: `test/file-store.test.ts` "a new store over the same file reads what the last commit wrote", "refuses a file that does not match the schema, which a store must not hand to the runtime".
+- A new Harness over the same state directory, as in the next run of the command, reads what the last commit
+  wrote, and the same delivery sent again adds nothing. The runtime checks the stored marking against the net. It
+  does not check the log: it trusts the log that Durable stored.
+  Tests: `test/jsonl-storage.test.ts` "a new Harness over the same JSONL directory reads what the last commit wrote", "the same delivery sent again on the new Harness adds nothing".
 - The command above, run twice, adds nothing the second time.
   Test: `test/main.test.ts` "runs the sample deliveries, and a second run of the same deliveries adds nothing".
 
 ## 4 Limits
 
-- The host steps only after a delivery it handles. Steps left over from a crash run at the next handled delivery.
 - A comment on a pull request whose `opened` delivery never came waits: nothing gives that pull request a token.
-- The loop stops when a step fires nothing. This net always stops; a host whose net can cycle must also count steps.
-- One process at a time may use the state file (see `NetInstanceStore` in `packages/runtime/src/net-instance.ts`).
+- A commit steps until a step fires nothing, at most 1,000 steps. This net always stops; a net that can cycle makes
+  the enqueue throw and commits nothing.
+- One process at a time may use the state directory.
+- `src/main.ts` opens the storage with `fsync` on: Durable flushes a commit's files to the disk before it appends
+  the commit's marker, so after a power loss the state holds whole commits only. Durable does not flush the marker
+  before the commit returns, so a power loss can lose the last commits that it acknowledged.
 - The edge does not check the webhook signature. A real app checks `X-Hub-Signature-256` before it reads the body.

@@ -13,8 +13,7 @@ import {
 	mutualExclusion,
 	mutualExclusionHandlers,
 } from "../src/mutual-exclusion.ts";
-import type { HistoryDisk } from "./disk.ts";
-import { Crashed, historyDisk } from "./disk.ts";
+import { clock, createDisk, runToEnd } from "./disk.ts";
 
 type SharedResource = Resource & {
 	/** Each time two holders were inside at once: their operation ids. */
@@ -54,13 +53,14 @@ function sharedResource(pause: () => Promise<void>): SharedResource {
 	};
 }
 
-function runtimeOn(disk: HistoryDisk, resource: Resource, dieAt?: number): Runtime {
+function runtimeOf(resource: Resource): Runtime {
 	return createRuntime({
+		name: "mutual-exclusion",
 		net: mutualExclusion,
-		store: disk.open(dieAt),
 		policy: definitionOrder,
-		clock: { now: () => 0 },
+		clock,
 		handlers: mutualExclusionHandlers(resource),
+		retryDelayMs: 0,
 	});
 }
 
@@ -71,10 +71,10 @@ function oneHolder(marking: Marking): boolean {
 
 describe("mutual exclusion", () => {
 	test("lets each process in once, one at a time, and gives the resource token back", async () => {
-		const disk = historyDisk({ marking: initialMarking(3), log: [] });
+		const disk = createDisk();
 		const resource = sharedResource(() => Promise.resolve());
-		await runtimeOn(disk, resource).settle();
-		expect(disk.last().marking).toStrictEqual({ [mutex.id]: ["lock"], [finished.id]: ["p1", "p2", "p3"] });
+		await runToEnd(disk, runtimeOf(resource), initialMarking(3), undefined);
+		expect(disk.last()).toStrictEqual({ [mutex.id]: ["lock"], [finished.id]: ["p1", "p2", "p3"] });
 		expect(resource.overlaps()).toStrictEqual([]);
 	});
 
@@ -84,21 +84,17 @@ describe("mutual exclusion", () => {
 				fc.scheduler(),
 				fc.integer({ min: 1, max: 4 }),
 				fc.option(fc.nat({ max: 12 }), { nil: undefined }),
-				async (scheduler, processCount, dieAt) => {
-					const disk = historyDisk({ marking: initialMarking(processCount), log: [] });
+				async (scheduler, processCount, crashAt) => {
+					const disk = createDisk();
 					const resource = sharedResource(() => scheduler.schedule(Promise.resolve(), "inside"));
-					await scheduler.waitFor(runtimeOn(disk, resource, dieAt).settle()).catch((error: unknown) => {
-						if (!(error instanceof Crashed)) {
-							throw error;
-						}
-						return scheduler.waitFor(runtimeOn(disk, resource).settle());
-					});
+					await runToEnd(disk, runtimeOf(resource), initialMarking(processCount), crashAt, (settling) =>
+						scheduler.waitFor(settling),
+					);
 					const processes = Array.from({ length: processCount }, (_, index) => `p${String(index + 1)}`);
 					return (
-						disk.history().every((state) => oneHolder(state.marking)) &&
+						disk.history().every((state) => oneHolder(state)) &&
 						resource.overlaps().length === 0 &&
-						JSON.stringify([...tokensAt(disk.last().marking, finished.id)].sort()) ===
-							JSON.stringify(processes) &&
+						JSON.stringify([...tokensAt(disk.last(), finished.id)].sort()) === JSON.stringify(processes) &&
 						JSON.stringify([...resource.uses().values()].sort()) === JSON.stringify(processes)
 					);
 				},

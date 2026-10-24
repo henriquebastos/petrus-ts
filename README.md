@@ -1,25 +1,26 @@
 # Petrus TS
 
-Petrus runs coloured Petri nets as durable programs. A host adds tokens from outside under a request id, and a
-step fires the binding elements that a selection policy picks and commits the new marking with their occurrences
-in the same commit. The Python Petrus is a separate implementation; nothing is ported from it.
+Petrus runs coloured Petri nets as durable programs. A host adds tokens from outside under a request id. The
+commit that adds them steps the net until the selection policy picks nothing, and holds the new marking with the
+occurrences of its steps. The Python Petrus is a separate implementation; nothing is ported from it.
 
 ## Status
 
-Walking skeleton. `petri-net` has the firing rule; `runtime` runs steps and handlers over a test store, with the
-seams (clock, store, serial steps) that a real store will use. Handlers run in the runtime's process. Every quality gate has a planted defect in `fixtures/`
-and a test in `test/gates/` that shows the gate still fails on it.
+Walking skeleton. `petri-net` has the firing rule; `runtime` runs net instances and handlers on Pi Durable 1.4.0,
+with the clock as a seam. Each operation runs as a Durable task in the host's process. Every quality gate has a
+planted defect in `fixtures/` and a test in `test/gates/` that shows the gate still fails on it.
 
 ## Packages
 
-| Package             | Role                                                         | May import  | Docs                                                                            |
-| ------------------- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
-| `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.        | nothing     | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
-| `@petrus/runtime`   | One net instance over a store: enqueues, steps, handlers.    | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
+| Package             | Role                                                    | May import              | Docs                                                                            |
+| ------------------- | ------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.   | nothing                 | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
+| `@petrus/runtime`   | Net instances on Pi Durable: enqueues, steps, handlers. | `petri-net`, Pi Durable | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
-`examples/comment-replies` is a host app on these packages: GitHub webhook deliveries in, request ids, a file
-store. See its [README](examples/comment-replies/README.md). `examples/classics` runs nets from the literature with
-handler transitions and checks each net's invariant at every commit. See its [README](examples/classics/README.md).
+`examples/comment-replies` is a host app on these packages: GitHub webhook deliveries in, request ids, Durable's
+JSONL storage. See its [README](examples/comment-replies/README.md). `examples/classics` runs nets from the
+literature with handler transitions and checks each net's invariant at every commit. See its
+[README](examples/classics/README.md).
 An example imports packages only through their root, and no package imports an example.
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:

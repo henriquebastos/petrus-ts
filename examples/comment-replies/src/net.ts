@@ -18,9 +18,6 @@ const Comment = Type.Object({ repo: id, pr: id, comment: id, author: id }, { add
 /** An answer that the app owes to one comment. */
 const Reply = Type.Object({ repo: id, pr: id, comment: id }, { additionalProperties: false });
 
-/** Every token this net holds, so a store can check what it reads back. */
-export const AppToken = Type.Union([PullRequest, Comment, Reply]);
-
 /** A TypeBox schema becomes a colour set through `Value.Check`, so petri-net needs no schema library. */
 function colourSet(name: string, schema: TSchema): ColourSet {
 	return { name, contains: (token) => Value.Check(schema, token) };

@@ -23,9 +23,7 @@ test("a new runtime export fails the API check until the report is updated", asy
 
 	const updated = await runScript(script, ["--update"], root);
 	expect(updated.exitCode).toBe(0);
-	expect(readFileSync(join(root, "packages/runtime/api/runtime.api.md"), "utf8")).toContain(
-		"export function createSerialQueue(): SerialQueue;",
-	);
+	expect(readFileSync(join(root, "packages/runtime/api/runtime.api.md"), "utf8")).toContain("export const stepLimit");
 	expect((await runScript(script, [], root)).exitCode).toBe(0);
 });
 

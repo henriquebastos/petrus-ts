@@ -1,20 +1,47 @@
-// Planted defect: enqueue ignores the request id, so a retry after a lost reply adds the batch a second time.
-import { addTokens, placeId } from "../../packages/petri-net/src/index.ts";
-import type { Batch, Ingress, Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
-import { createRuntime } from "../../packages/runtime/src/runtime.ts";
+// Planted defect: an enqueue ignores the request ids that the log holds, so a host that sends a batch again after a
+// crash, as it must when it cannot tell whether the batch landed, adds its tokens twice.
+import type { Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
+import { createRuntime } from "../../packages/runtime/src/index.ts";
+import { admit } from "../../packages/runtime/src/admit.ts";
+import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
+import { commitToNetInstance } from "../../packages/runtime/src/net-instance-commit.ts";
 
 export function createIdBlindRuntime(options: RuntimeOptions): Runtime {
+	const runtime = createRuntime(options);
+	const parts: NetInstanceParts = {
+		name: options.name,
+		net: options.net,
+		policy: options.policy,
+		handlerIds: new Set(),
+		start: () => Promise.resolve(),
+	};
 	return {
-		...createRuntime(options),
-		enqueue: async (batch: Batch): Promise<Ingress> => {
-			const state = await options.store.load();
-			const ingress: Ingress = { kind: "ingress", ...batch, at: options.clock.now() };
-			const marking = Object.entries(batch.tokens).reduce(
-				(sum, [place, tokens]) => addTokens(sum, placeId(place), tokens),
-				state.marking,
-			);
-			await options.store.commit({ marking, log: [...state.log, ingress] });
-			return ingress;
-		},
+		extension: runtime.extension,
+		instance: (host, conversationId) => ({
+			...runtime.instance(host, conversationId),
+			enqueue: (batch, context) => {
+				const at = options.clock.now();
+				return host.commit(
+					(tx) =>
+						commitToNetInstance(
+							tx,
+							conversationId,
+							parts,
+							(current) => {
+								const fresh = admit(options.net, { marking: current.marking, log: [] }, batch, at);
+								return fresh.kind === "applied"
+									? {
+											kind: "applied",
+											ingress: fresh.ingress,
+											state: { marking: fresh.state.marking, log: [...current.log, fresh.ingress] },
+										}
+									: fresh;
+							},
+							at,
+						),
+					context,
+				);
+			},
+		}),
 	};
 }

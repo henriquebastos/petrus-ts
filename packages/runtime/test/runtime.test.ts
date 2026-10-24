@@ -1,166 +1,204 @@
 import fc from "fast-check";
 import type { SelectionPolicy } from "@petrus/petri-net";
 import { definitionOrder, placeId, transitionId } from "@petrus/petri-net";
-import { describe, expect, test } from "vitest";
-import type { RuntimeOptions } from "../src/index.ts";
+import { describe, expect, onTestFinished, test } from "vitest";
+import type { NetInstance, Runtime, RuntimeOptions } from "../src/index.ts";
 import { createRuntime } from "../src/index.ts";
-import type { Disk } from "./controlled-store.ts";
-import { createDisk, ReplyLost } from "./controlled-store.ts";
+import { stepLimit } from "../src/advance.ts";
+import { netInstanceRecord } from "../src/net-instance-record.ts";
+import type { Disk, Process, TestClock } from "./disk.ts";
+import { context, createClock, createDisk, Crashed } from "./disk.ts";
 import {
 	contested,
-	crashCutProperty,
-	initialState,
+	contestedOptions,
+	counted,
+	counter,
+	crashProperty,
 	left,
 	move,
 	raceProperty,
 	ready,
-	retryProperty,
+	right,
 } from "./properties.ts";
 
 const takeLeft = transitionId("take-left");
 const takeRight = transitionId("take-right");
 
-function options(disk: Disk, overrides: Partial<RuntimeOptions> = {}): RuntimeOptions {
-	return { net: contested, store: disk.open(), policy: definitionOrder, clock: { now: () => 0 }, ...overrides };
+type Opened = { readonly disk: Disk; readonly process: Process; readonly instance: NetInstance };
+
+/** A runtime of the contested net in the root conversation of a new process; the test closes its Harness. */
+async function opened(overrides: Partial<RuntimeOptions> = {}, clock: TestClock = createClock()): Promise<Opened> {
+	const runtime = createRuntime({ ...contestedOptions(definitionOrder, clock), ...overrides });
+	const disk = createDisk([runtime.extension], clock);
+	return { disk, ...(await instanceIn(disk, runtime)) };
 }
 
+async function instanceIn(disk: Disk, runtime: Runtime): Promise<Omit<Opened, "disk">> {
+	const process = await disk.open();
+	onTestFinished(() => process.harness.close(context));
+	return { process, instance: runtime.instance(process.harness, (await process.harness.root(context)).id) };
+}
+
+const batch = { requestId: "delivery-1", tokens: { [ready.id]: ["j1", "j2"] } };
+
 describe("createRuntime, examples", () => {
-	test("commits the new marking and the step's occurrences together, stamped by the clock", async () => {
-		const disk = createDisk(initialState);
-		let clock = 5_000;
-		const runtime = createRuntime(options(disk, { clock: { now: () => clock } }));
-		clock = 6_000;
+	test("a conversation with no instance has no tokens, an empty log and nothing in flight", async () => {
+		const { instance } = await opened();
+		expect(await instance.state(context)).toStrictEqual({ marking: {}, log: [] });
+		expect(await instance.inFlight(context)).toStrictEqual([]);
+	});
+
+	test("the first enqueue gives the first tokens, and one commit holds its ingress and the steps' occurrences, stamped by the clock", async () => {
+		const clock = createClock(5_000);
+		const { disk, instance } = await opened({}, clock);
+		clock.moveTo(6_000);
+		const committed = await instance.enqueue(batch, context);
+		const ingress = { kind: "ingress", ...batch, at: 6_000 };
 		const fired = [
 			{ kind: "occurrence", transition: takeLeft, binding: { j: "j1" }, at: 6_000 },
 			{ kind: "occurrence", transition: takeLeft, binding: { j: "j2" }, at: 6_000 },
 		];
-		const stepped = await runtime.step();
-		expect(stepped.fired).toStrictEqual(fired);
-		expect(disk.stored()).toStrictEqual({ marking: { [placeId("left")]: ["j1", "j2"] }, log: fired });
-		expect(stepped.state).toStrictEqual(disk.stored());
+		expect(committed).toStrictEqual({ ingress, fired });
+		const state = { marking: { [left.id]: ["j1", "j2"] }, log: [ingress, ...fired] };
+		expect(await instance.state(context)).toStrictEqual(state);
+		expect(disk.history()).toStrictEqual([state]);
 	});
 
 	test("lets the policy decide which transition takes a contested token", async () => {
-		const disk = createDisk(initialState);
-		const rightFirst: SelectionPolicy = (enabled) => enabled.filter((element) => element.transition === takeRight);
-		const stepped = await createRuntime(options(disk, { policy: rightFirst })).step();
-		expect(stepped.fired.map((occurrence) => occurrence.transition)).toStrictEqual([takeRight, takeRight]);
-		expect(disk.stored().marking).toStrictEqual({ [placeId("right")]: ["j1", "j2"] });
+		const rightOnly: SelectionPolicy = (enabled) => enabled.filter((element) => element.transition === takeRight);
+		const { instance } = await opened({ policy: rightOnly });
+		const { fired } = await instance.enqueue(batch, context);
+		expect(fired.map((occurrence) => occurrence.transition)).toStrictEqual([takeRight, takeRight]);
+		expect((await instance.state(context)).marking).toStrictEqual({ [right.id]: ["j1", "j2"] });
 	});
 
-	test("fires nothing and commits nothing when nothing is enabled", async () => {
-		const idle = { marking: { [placeId("right")]: ["j1"] }, log: [] };
-		let commits = 0;
-		const disk = createDisk(idle);
-		const store = disk.open();
-		const runtime = createRuntime(
-			options(disk, {
-				store: {
-					load: store.load,
-					commit: (state) => {
-						commits += 1;
-						return store.commit(state);
-					},
-				},
-			}),
+	test("a commit steps until the net is quiet: a policy that fires one element a step still fires them all", async () => {
+		const { disk, instance } = await opened({ policy: (enabled) => enabled.slice(0, 1) });
+		const { fired } = await instance.enqueue(batch, context);
+		expect(fired.map((occurrence) => occurrence.binding)).toStrictEqual([{ j: "j1" }, { j: "j2" }]);
+		expect(disk.history().map((state) => state.marking)).toStrictEqual([{ [left.id]: ["j1", "j2"] }]);
+	});
+
+	test("a batch that enables nothing commits its ingress and fires nothing", async () => {
+		const { disk, instance } = await opened();
+		const idle = { requestId: "delivery-1", tokens: { [right.id]: ["j1"] } };
+		const { ingress, fired } = await instance.enqueue(idle, context);
+		expect(fired).toStrictEqual([]);
+		expect(disk.history()).toStrictEqual([{ marking: { [right.id]: ["j1"] }, log: [ingress] }]);
+	});
+
+	test("a batch sent again returns the recorded ingress, fires nothing and commits nothing", async () => {
+		const clock = createClock(1);
+		const { disk, instance } = await opened({}, clock);
+		const first = await instance.enqueue(batch, context);
+		clock.moveTo(2);
+		expect(await instance.enqueue(batch, context)).toStrictEqual({ ingress: first.ingress, fired: [] });
+		expect(disk.history()).toHaveLength(1);
+	});
+
+	test("after a crash right after the commit landed, the batch sent again on a new process returns the recorded ingress", async () => {
+		const clock = createClock(1);
+		const runtime = createRuntime(contestedOptions(definitionOrder, clock));
+		const disk = createDisk([runtime.extension], clock);
+		const dying = await disk.open({ crashAfterCommit: 1 });
+		const root = await dying.harness.root(context);
+		await expect(runtime.instance(dying.harness, root.id).enqueue(batch, context)).rejects.toThrow(Crashed);
+		await dying.harness.close(context);
+		const { instance } = await instanceIn(disk, runtime);
+		clock.moveTo(2);
+		const { ingress, fired } = await instance.enqueue(batch, context);
+		expect({ ingress, fired }).toStrictEqual({ ingress: { kind: "ingress", ...batch, at: 1 }, fired: [] });
+		expect(disk.history()).toHaveLength(1);
+	});
+
+	test("a commit fires up to stepLimit steps", async () => {
+		const { instance } = await opened({ name: "counter", net: counter(stepLimit) });
+		const { fired } = await instance.enqueue({ requestId: "start", tokens: { [counted.id]: [0] } }, context);
+		expect(fired).toHaveLength(stepLimit);
+		expect((await instance.state(context)).marking).toStrictEqual({ [counted.id]: [stepLimit] });
+	});
+
+	test("refuses a net that can still fire after stepLimit steps, which is a bug in the net, and commits nothing", async () => {
+		const { disk, instance } = await opened({ name: "counter", net: counter(stepLimit + 1) });
+		await expect(instance.enqueue({ requestId: "start", tokens: { [counted.id]: [0] } }, context)).rejects.toThrow(
+			new Error("the net did not become quiet after 1000 steps"),
 		);
-		expect(await runtime.step()).toStrictEqual({ fired: [], state: idle });
-		expect(commits).toBe(0);
+		expect(disk.history()).toStrictEqual([]);
 	});
 
 	test("refuses a net with problems, which is a bug in the caller, and names every problem", () => {
-		const broken = { ...contested, transitions: [...contested.transitions, ...contested.transitions.slice(0, 2)] };
-		expect(() => createRuntime(options(createDisk(initialState), { net: broken }))).toThrow(
+		const broken = { ...contested, transitions: [...contested.transitions, ...contested.transitions] };
+		expect(() => createRuntime({ ...contestedOptions(definitionOrder, createClock()), net: broken })).toThrow(
 			new Error("invalid net: take-left: id used 2 times; take-right: id used 2 times"),
 		);
 	});
 
-	test("rejects a step and an enqueue when the stored marking does not fit the net, which is a bug in the store", async () => {
-		const disk = createDisk({ marking: { [placeId("ready")]: ["j9"], [placeId("lost")]: ["j1"] }, log: [] });
-		const runtime = createRuntime(options(disk));
+	test("refuses a conversation that holds an instance of another net, which is a bug in the host", async () => {
+		const clock = createClock();
+		const mine = createRuntime(contestedOptions(definitionOrder, clock));
+		const other = createRuntime({ ...contestedOptions(definitionOrder, clock), name: "other" });
+		const disk = createDisk([mine.extension, other.extension], clock);
+		const { process, instance } = await instanceIn(disk, mine);
+		await instance.enqueue(batch, context);
+		const theirs = other.instance(process.harness, (await process.harness.root(context)).id);
+		const wrongNet = new Error("the conversation holds an instance of the net contested, not other");
+		await expect(theirs.state(context)).rejects.toThrow(wrongNet);
+		await expect(theirs.enqueue({ ...batch, requestId: "delivery-2" }, context)).rejects.toThrow(wrongNet);
+		expect(disk.history()).toHaveLength(1);
+	});
+
+	test("refuses a stored marking that does not fit the net, which is a bug in the store", async () => {
+		const { process, instance } = await opened();
+		const root = await process.harness.root(context);
+		await process.harness.commit(async (tx) => {
+			const draft = await tx.doc(netInstanceRecord, root.id);
+			draft.net = "contested";
+			draft.marking = { [ready.id]: ["j9"], lost: ["j1"] };
+		}, context);
 		const problems = new Error(
 			'invalid stored marking: marking: "j9" on ready is not in Job; marking: place lost is not in the net',
 		);
-		await expect(runtime.step()).rejects.toThrow(problems);
-		await expect(runtime.enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j1"] } })).rejects.toThrow(
-			problems,
-		);
+		await expect(instance.state(context)).rejects.toThrow(problems);
+		await expect(instance.enqueue(batch, context)).rejects.toThrow(problems);
 	});
 
-	test("rejects a step whose net throws, and commits nothing", async () => {
+	test("rejects an enqueue whose net throws, and commits nothing", async () => {
 		const takeLeftBroken = {
 			...move("take-left", ready, left),
 			outputs: [{ place: left, expression: () => ["j9"] }],
 		};
-		const disk = createDisk(initialState);
-		const runtime = createRuntime(options(disk, { net: { ...contested, transitions: [takeLeftBroken] } }));
-		await expect(runtime.step()).rejects.toThrow(TypeError);
-		expect(disk.stored()).toBe(initialState);
+		const { disk, instance } = await opened({ net: { ...contested, transitions: [takeLeftBroken] } });
+		await expect(instance.enqueue(batch, context)).rejects.toThrow(TypeError);
+		expect(disk.history()).toStrictEqual([]);
+		expect(await instance.state(context)).toStrictEqual({ marking: {}, log: [] });
 	});
 
-	test("rejects a step whose policy names a transition outside the net, and commits nothing", async () => {
-		const disk = createDisk(initialState);
+	test("rejects an enqueue whose policy names a transition outside the net, and commits nothing", async () => {
 		const invents: SelectionPolicy = () => [{ transition: transitionId("ghost"), binding: {} }];
-		await expect(createRuntime(options(disk, { policy: invents })).step()).rejects.toThrow(
+		const { disk, instance } = await opened({ policy: invents });
+		await expect(instance.enqueue(batch, context)).rejects.toThrow(
 			"the policy chose ghost, which is not a transition of the net",
 		);
-		expect(disk.stored()).toBe(initialState);
-	});
-
-	test("enqueues a batch: commits its tokens and its ingress together, stamped by the clock", async () => {
-		const disk = createDisk({ marking: {}, log: [] });
-		const runtime = createRuntime(options(disk, { clock: { now: () => 9 } }));
-		const ingress = await runtime.enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j2"] } });
-		expect(ingress).toStrictEqual({
-			kind: "ingress",
-			requestId: "delivery-1",
-			tokens: { [ready.id]: ["j2"] },
-			at: 9,
-		});
-		expect(disk.stored()).toStrictEqual({ marking: { [ready.id]: ["j2"] }, log: [ingress] });
-	});
-
-	test("a retry after a lost reply returns the recorded ingress and adds nothing", async () => {
-		const disk = createDisk(initialState);
-		let clock = 1;
-		const runtime = createRuntime(
-			options(disk, { store: disk.open({ loseReplyAtCommit: 0 }), clock: { now: () => clock } }),
-		);
-		const batch = { requestId: "delivery-1", tokens: { [ready.id]: ["j1"] } };
-		await expect(runtime.enqueue(batch)).rejects.toThrow(ReplyLost);
-		const landed = disk.stored();
-		clock = 2;
-		expect(await runtime.enqueue(batch)).toStrictEqual({ kind: "ingress", ...batch, at: 1 });
-		expect(disk.stored()).toBe(landed);
+		expect(disk.history()).toStrictEqual([]);
 	});
 
 	test("rejects a batch that does not fit the net, which is a bug in the host, and commits nothing", async () => {
-		const disk = createDisk(initialState);
+		const { disk, instance } = await opened();
 		await expect(
-			createRuntime(options(disk)).enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j9"] } }),
-		).rejects.toThrow('invalid batch delivery-1: marking: "j9" on ready is not in Job');
-		expect(disk.stored()).toBe(initialState);
-	});
-
-	test("a failed commit does not block the next step", async () => {
-		const disk = createDisk(initialState);
-		const runtime = createRuntime(options(disk, { store: disk.open({ crashAtCommit: 0 }) }));
-		await expect(runtime.step()).rejects.toThrow("crash at commit 0");
-		// The queue runs the next step; it fails only because the crashed store is closed.
-		await expect(runtime.step()).rejects.toThrow("store is closed");
+			instance.enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j9"], [placeId("lost")]: [] } }, context),
+		).rejects.toThrow(
+			'invalid batch delivery-1: marking: "j9" on ready is not in Job; marking: place lost is not in the net',
+		);
+		expect(disk.history()).toStrictEqual([]);
 	});
 });
 
 describe("createRuntime, simulation", () => {
-	test("stays consistent after a crash at any commit and a reopen", async () => {
-		await fc.assert(crashCutProperty(createRuntime));
+	test("adds each batch once and leaves every commit quiet when a crash cuts any commit and the host sends every batch again", async () => {
+		await fc.assert(crashProperty(createRuntime));
 	});
 
-	test("loses no acknowledged step or batch under any interleaving", async () => {
+	test("loses no acknowledged batch and adds each request id once under any order of concurrent enqueues", async () => {
 		await fc.assert(raceProperty(createRuntime));
-	});
-
-	test("adds each batch once when a commit fails or its reply is lost and the host retries with the same request id", async () => {
-		await fc.assert(retryProperty(createRuntime));
 	});
 });

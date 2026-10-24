@@ -3,7 +3,7 @@ import type { Marking, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, tokensAt } from "@petrus/petri-net";
 import type { Runtime } from "@petrus/runtime";
 import { createRuntime } from "@petrus/runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import type { Network, Timer } from "../src/simple-protocol.ts";
 import {
 	dataReceived,
@@ -14,8 +14,7 @@ import {
 	simpleProtocol,
 	simpleProtocolHandlers,
 } from "../src/simple-protocol.ts";
-import type { HistoryDisk } from "./disk.ts";
-import { Crashed, historyDisk } from "./disk.ts";
+import { clock, context, createDisk, runToEnd } from "./disk.ts";
 import { flush } from "./flush.ts";
 
 /** The data of the example in Jensen, Kristensen and Wells (2007), section 2. */
@@ -37,13 +36,14 @@ function fakeNetwork(losses: readonly boolean[], pause: () => Promise<void>): Fa
 	};
 }
 
-function runtimeOn(disk: HistoryDisk, network: Network, timer: Timer, dieAt?: number): Runtime {
+function runtimeOf(network: Network, timer: Timer): Runtime {
 	return createRuntime({
+		name: "simple-protocol",
 		net: simpleProtocol,
-		store: disk.open(dieAt),
 		policy: definitionOrder,
-		clock: { now: () => 0 },
+		clock,
 		handlers: simpleProtocolHandlers(network, timer),
+		retryDelayMs: 0,
 	});
 }
 
@@ -81,14 +81,14 @@ const now = (): Promise<void> => Promise.resolve();
 
 describe("simple protocol", () => {
 	test("delivers the data of the paper once and in order", async () => {
-		const disk = historyDisk({ marking: initialMarking(paperData), log: [] });
-		await runtimeOn(disk, fakeNetwork([], now), { wait: now }).settle();
-		expect(only(disk.last().marking, dataReceived)).toBe("COLOURED PETRI NET");
-		expect(done(disk.last().marking, paperData)).toBe(true);
+		const disk = createDisk();
+		await runToEnd(disk, runtimeOf(fakeNetwork([], now), { wait: now }), initialMarking(paperData), undefined);
+		expect(only(disk.last(), dataReceived)).toBe("COLOURED PETRI NET");
+		expect(done(disk.last(), paperData)).toBe(true);
 	});
 
 	test("holds a sent packet until its timer runs out, and then sends it again if the network lost it", async () => {
-		const disk = historyDisk({ marking: initialMarking(["COL"]), log: [] });
+		const disk = createDisk();
 		const network = fakeNetwork([true], now);
 		const timers: (() => void)[] = [];
 		const timer: Timer = {
@@ -97,18 +97,21 @@ describe("simple protocol", () => {
 					timers.push(resolve);
 				}),
 		};
-		const settled = runtimeOn(disk, network, timer).settle();
+		const process = await disk.open(runtimeOf(network, timer));
+		onTestFinished(() => process.close());
+		await process.instance.enqueue({ requestId: "first", tokens: initialMarking(["COL"]) }, context);
+		const settled = process.settle();
 		await flush();
 		expect(network.transmitted()).toStrictEqual([[1, "COL"]]);
-		expect(only(disk.last().marking, dataReceived)).toBe("");
+		expect(only(disk.last(), dataReceived)).toBe("");
 		timers.shift()?.();
 		await flush();
 		expect(network.transmitted()).toStrictEqual([[1, "COL"], [1, "COL"], 2]);
-		expect(only(disk.last().marking, dataReceived)).toBe("COL");
+		expect(only(disk.last(), dataReceived)).toBe("COL");
 		expect(timers).toHaveLength(1);
 		timers.shift()?.();
 		await settled;
-		expect(done(disk.last().marking, ["COL"])).toBe(true);
+		expect(done(disk.last(), ["COL"])).toBe(true);
 	});
 
 	test("the receiver gets the data once and in order, under any losses, any order of messages and timers, and a crash at any commit", async () => {
@@ -117,22 +120,16 @@ describe("simple protocol", () => {
 				fc.scheduler(),
 				fc.integer({ min: 1, max: 4 }),
 				fc.array(fc.boolean(), { maxLength: 8 }),
-				fc.option(fc.nat({ max: 150 }), { nil: undefined }),
-				async (scheduler, packets, losses, dieAt) => {
+				fc.option(fc.nat({ max: 100 }), { nil: undefined }),
+				async (scheduler, packets, losses, crashAt) => {
 					const data = paperData.slice(0, packets);
-					const disk = historyDisk({ marking: initialMarking(data), log: [] });
+					const disk = createDisk();
 					const network = fakeNetwork(losses, () => scheduler.schedule(Promise.resolve(), "network"));
 					const timer: Timer = { wait: () => scheduler.schedule(Promise.resolve(), "timer") };
-					await scheduler.waitFor(runtimeOn(disk, network, timer, dieAt).settle()).catch((error: unknown) => {
-						if (!(error instanceof Crashed)) {
-							throw error;
-						}
-						return scheduler.waitFor(runtimeOn(disk, network, timer).settle());
-					});
-					return (
-						disk.history().every((state) => receivedInOrder(state.marking, data)) &&
-						done(disk.last().marking, data)
+					await runToEnd(disk, runtimeOf(network, timer), initialMarking(data), crashAt, (settling) =>
+						scheduler.waitFor(settling),
 					);
+					return disk.history().every((state) => receivedInOrder(state, data)) && done(disk.last(), data);
 				},
 			),
 		);

@@ -16,8 +16,7 @@ import {
 	producerConsumerHandlers,
 	used,
 } from "../src/producer-consumer.ts";
-import type { HistoryDisk } from "./disk.ts";
-import { Crashed, historyDisk } from "./disk.ts";
+import { clock, createDisk, runToEnd } from "./disk.ts";
 
 /** A workshop that does each operation once and records it. `pause` is where its work waits. */
 function workshop(pause: () => Promise<void>): Workshop & { readonly uses: () => ReadonlyMap<string, Token> } {
@@ -38,13 +37,14 @@ function workshop(pause: () => Promise<void>): Workshop & { readonly uses: () =>
 	};
 }
 
-function runtimeOn(disk: HistoryDisk, shop: Workshop, dieAt?: number): Runtime {
+function runtimeOf(shop: Workshop): Runtime {
 	return createRuntime({
+		name: "producer-consumer",
 		net: producerConsumer,
-		store: disk.open(dieAt),
 		policy: definitionOrder,
-		clock: { now: () => 0 },
+		clock,
 		handlers: producerConsumerHandlers(shop),
+		retryDelayMs: 0,
 	});
 }
 
@@ -62,10 +62,10 @@ function invariantsHold(marking: Marking, orderCount: number, capacity: number):
 
 describe("producer and consumer", () => {
 	test("makes and uses every order once, and frees every slot", async () => {
-		const disk = historyDisk({ marking: initialMarking(3, 2), log: [] });
+		const disk = createDisk();
 		const shop = workshop(() => Promise.resolve());
-		await runtimeOn(disk, shop).settle();
-		expect(disk.last().marking).toStrictEqual({
+		await runToEnd(disk, runtimeOf(shop), initialMarking(3, 2), undefined);
+		expect(disk.last()).toStrictEqual({
 			[free.id]: ["slot", "slot"],
 			[used.id]: ["item 1", "item 2", "item 3"],
 		});
@@ -78,21 +78,18 @@ describe("producer and consumer", () => {
 				fc.scheduler(),
 				fc.integer({ min: 1, max: 5 }),
 				fc.integer({ min: 1, max: 3 }),
-				fc.option(fc.nat({ max: 20 }), { nil: undefined }),
-				async (scheduler, orderCount, capacity, dieAt) => {
-					const disk = historyDisk({ marking: initialMarking(orderCount, capacity), log: [] });
+				fc.option(fc.nat({ max: 24 }), { nil: undefined }),
+				async (scheduler, orderCount, capacity, crashAt) => {
+					const disk = createDisk();
 					const shop = workshop(() => scheduler.schedule(Promise.resolve(), "work"));
-					await scheduler.waitFor(runtimeOn(disk, shop, dieAt).settle()).catch((error: unknown) => {
-						if (!(error instanceof Crashed)) {
-							throw error;
-						}
-						return scheduler.waitFor(runtimeOn(disk, shop).settle());
-					});
+					await runToEnd(disk, runtimeOf(shop), initialMarking(orderCount, capacity), crashAt, (settling) =>
+						scheduler.waitFor(settling),
+					);
 					const items = Array.from({ length: orderCount }, (_, index) => `item ${String(index + 1)}`);
 					return (
-						disk.history().every((state) => invariantsHold(state.marking, orderCount, capacity)) &&
-						tokensAt(disk.last().marking, free.id).length === capacity &&
-						JSON.stringify([...tokensAt(disk.last().marking, used.id)].sort()) === JSON.stringify(items) &&
+						disk.history().every((state) => invariantsHold(state, orderCount, capacity)) &&
+						tokensAt(disk.last(), free.id).length === capacity &&
+						JSON.stringify([...tokensAt(disk.last(), used.id)].sort()) === JSON.stringify(items) &&
 						JSON.stringify([...shop.uses().values()].sort()) === JSON.stringify(items)
 					);
 				},

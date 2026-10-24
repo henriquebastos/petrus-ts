@@ -7,11 +7,15 @@
 import type { Binding } from '@petrus/petri-net';
 import type { BindingElement } from '@petrus/petri-net';
 import type { ColourSet } from '@petrus/petri-net';
+import type { Context } from '@earendil-works/chord';
+import type { ConversationId } from '@earendil-works/pi-durable';
+import type { Extension } from '@earendil-works/pi-durable';
 import type { Marking } from '@petrus/petri-net';
 import type { Net } from '@petrus/petri-net';
 import type { Place } from '@petrus/petri-net';
 import type { PlaceId } from '@petrus/petri-net';
 import type { SelectionPolicy } from '@petrus/petri-net';
+import type { Session } from '@earendil-works/pi-durable';
 import type { Token } from '@petrus/petri-net';
 import type { Transition } from '@petrus/petri-net';
 import type { TransitionId } from '@petrus/petri-net';
@@ -28,6 +32,12 @@ export function busyPlaceId(transition: TransitionId): PlaceId;
 // @public
 export type Clock = {
     readonly now: () => number;
+};
+
+// @public
+export type Committed = {
+    readonly ingress: Ingress;
+    readonly fired: readonly Occurrence[];
 };
 
 // @public
@@ -65,15 +75,19 @@ export type Ingress = Batch & {
 export type LogEntry = Occurrence | Ingress;
 
 // @public
-export type NetInstanceState = {
-    readonly marking: Marking;
-    readonly log: readonly LogEntry[];
+export type NetInstance = {
+    readonly enqueue: (batch: Batch, context: Context) => Promise<Committed>;
+    readonly state: (context: Context) => Promise<NetInstanceState>;
+    readonly inFlight: (context: Context) => Promise<readonly Operation[]>;
 };
 
 // @public
-export type NetInstanceStore = {
-    readonly load: () => Promise<NetInstanceState>;
-    readonly commit: (state: NetInstanceState) => Promise<void>;
+export type NetInstanceHost = Pick<Session, "commit" | "snapshot">;
+
+// @public
+export type NetInstanceState = {
+    readonly marking: Marking;
+    readonly log: readonly LogEntry[];
 };
 
 // @public
@@ -100,26 +114,18 @@ export function resultPlaceId(transition: TransitionId): PlaceId;
 
 // @public
 export type Runtime = {
-    readonly step: () => Promise<Stepped>;
-    readonly enqueue: (batch: Batch) => Promise<Ingress>;
-    readonly inFlight: () => Promise<readonly Operation[]>;
-    readonly complete: (operationId: string, result: HandlerResult) => Promise<Ingress>;
-    readonly settle: () => Promise<readonly Occurrence[]>;
+    readonly extension: Extension;
+    readonly instance: (host: NetInstanceHost, conversationId: ConversationId) => NetInstance;
 };
 
 // @public
 export type RuntimeOptions = {
+    readonly name: string;
     readonly net: Net;
-    readonly store: NetInstanceStore;
     readonly policy: SelectionPolicy;
     readonly clock: Clock;
     readonly handlers?: readonly Handler[];
-};
-
-// @public
-export type Stepped = {
-    readonly fired: readonly Occurrence[];
-    readonly state: NetInstanceState;
+    readonly retryDelayMs: number;
 };
 
 // @public

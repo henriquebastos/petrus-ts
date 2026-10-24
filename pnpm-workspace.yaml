@@ -1,6 +1,9 @@
 packages:
    - packages/*
    - examples/*
+allowBuilds:
+   "@google/genai": false
+   protobufjs: false
 minimumReleaseAgeExclude:
    - "@fallow-cli/darwin-arm64@3.35.0"
    - "@fallow-cli/darwin-x64@3.35.0"

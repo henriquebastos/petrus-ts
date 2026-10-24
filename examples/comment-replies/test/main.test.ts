@@ -14,7 +14,7 @@ function run(state: string, deliveries: readonly string[]): readonly string[] {
 }
 
 test("runs the sample deliveries, and a second run of the same deliveries adds nothing", () => {
-	const state = join(mkdtempSync(join(tmpdir(), "comment-replies-")), "state.json");
+	const state = join(mkdtempSync(join(tmpdir(), "comment-replies-")), "state");
 	const deliveries = ["1-opened.json", "2-comment.json", "3-comment.json", "3-comment.json", "4-issue-comment.json"];
 	const marking =
 		'{"replies":[{"repo":4001,"pr":7,"comment":501},{"repo":4001,"pr":7,"comment":502}],"free":[{"repo":4001,"pr":7}]}';
