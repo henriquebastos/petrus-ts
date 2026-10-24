@@ -1,39 +1,27 @@
 // Planted defect: the queue lets the next step run as soon as this step issued its commit, not when the commit landed.
-import type { Binding, Result, TransitionId } from "../../packages/petri-net/src/index.ts";
-import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
-import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
+import { fireStep } from "../../packages/petri-net/src/index.ts";
+import type { Runtime, RuntimeOptions, Stepped } from "../../packages/runtime/src/index.ts";
 import { createSerialQueue } from "../../packages/runtime/src/serial-queue.ts";
 
-type Prepared = Result<{ readonly next: NetInstanceState; readonly landed: Promise<void> }, StepFailure>;
+type Prepared = { readonly stepped: Stepped; readonly landed: Promise<void> };
 
 export function createEarlyReleaseRuntime(options: RuntimeOptions): Runtime {
 	const serial = createSerialQueue();
 
-	async function prepare(id: TransitionId, binding: Binding): Promise<Prepared> {
-		const transition = options.net.transitions.find((candidate) => candidate.id === id);
-		if (transition === undefined) {
-			return err({ kind: "unknown-transition", transition: id });
-		}
+	async function prepare(): Promise<Prepared> {
 		const state = await options.store.load();
-		const fired = fire(transition, binding, state.marking);
-		if (!fired.ok) {
-			return fired;
-		}
-		const next = {
-			marking: fired.value,
-			occurrences: [...state.occurrences, { transition: id, binding, at: options.clock.now() }],
-		};
-		return ok({ next, landed: options.store.commit(next) });
+		const step = fireStep(options.net, state.marking, options.policy);
+		const at = options.clock.now();
+		const fired = step.fired.map((element) => ({ ...element, at }));
+		const next = { marking: step.marking, occurrences: [...state.occurrences, ...fired] };
+		return { stepped: { fired, state: next }, landed: options.store.commit(next) };
 	}
 
 	return {
-		step: async (id: TransitionId, binding: Binding): Promise<Result<NetInstanceState, StepFailure>> => {
-			const prepared = await serial(() => prepare(id, binding));
-			if (!prepared.ok) {
-				return prepared;
-			}
-			await prepared.value.landed;
-			return ok(prepared.value.next);
+		step: async (): Promise<Stepped> => {
+			const prepared = await serial(prepare);
+			await prepared.landed;
+			return prepared.stepped;
 		},
 	};
 }

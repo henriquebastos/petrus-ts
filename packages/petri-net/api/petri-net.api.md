@@ -11,16 +11,28 @@ export function addTokens(marking: Marking, place: PlaceId, tokens: readonly Tok
 export type Binding<V extends string = string> = Readonly<Record<V, Token>>;
 
 // @public
+export type BindingElement = {
+    readonly transition: TransitionId;
+    readonly binding: Binding;
+};
+
+// @public
 export type ColourSet = {
     readonly name: string;
     readonly contains: (token: Token) => boolean;
 };
 
 // @public
+export const definitionOrder: SelectionPolicy;
+
+// @public
 export const emptyMarking: Marking;
 
 // @public
 export function enabledBindings(transition: Transition, marking: Marking): readonly Binding[];
+
+// @public
+export function enabledElements(net: Net, marking: Marking): readonly BindingElement[];
 
 // @public
 export type Err<TError> = {
@@ -33,6 +45,15 @@ export function err<TError>(error: TError): Err<TError>;
 
 // @public
 export function fire(transition: Transition, binding: Binding, marking: Marking): Result<Marking, NotABinding | NotEnabled>;
+
+// @public
+export type FiredStep = {
+    readonly fired: readonly BindingElement[];
+    readonly marking: Marking;
+};
+
+// @public
+export function fireStep(net: Net, marking: Marking, policy: SelectionPolicy): FiredStep;
 
 // @public
 export type InputArc<V extends string = string> = {
@@ -103,6 +124,9 @@ export function removeTokens(marking: Marking, place: PlaceId, tokens: readonly 
 
 // @public
 export type Result<TValue, TError> = Ok<TValue> | Err<TError>;
+
+// @public
+export type SelectionPolicy = (enabled: readonly BindingElement[]) => readonly BindingElement[];
 
 // @public
 export type Shortfall = {

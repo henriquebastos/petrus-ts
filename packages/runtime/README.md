@@ -1,16 +1,16 @@
 # @petrus/runtime
 
-Runs one net instance over a store. A step fires one binding element and commits the new marking and its occurrence
-together. Time comes from an injected clock, and steps run one at a time.
+Runs one net instance over a store. A step selects the binding elements to fire with a selection policy, fires them
+together, and commits the new marking and its occurrences in one commit. Time comes from an injected clock, and
+steps run one at a time.
 
 ```ts
+import { definitionOrder } from "@petrus/petri-net";
 import { createRuntime } from "@petrus/runtime";
 
-const runtime = createRuntime({ net, store, clock: { now: () => Date.now() } });
-const stepped = await runtime.step(transitionId("finish"), { j: "job-1" });
-if (!stepped.ok) {
- // stepped.error.kind is "not-a-binding", "not-enabled" or "unknown-transition"; nothing was committed
-}
+const runtime = createRuntime({ net, store, policy: definitionOrder, clock: { now: () => Date.now() } });
+const stepped = await runtime.step();
+// stepped.fired lists the occurrences it committed; an empty list means nothing was enabled and nothing was committed
 ```
 
 - [docs/spec.md](docs/spec.md): terms, guarantees, failures and limits, each with the test that proves it.

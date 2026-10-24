@@ -8,4 +8,6 @@ export type { Binding, ColourSet, InputArc, Net, OutputArc, Place, Transition } 
 export { markingProblems, netProblems } from "./net-problems.ts";
 export type { Err, Ok, Result } from "./result.ts";
 export { err, ok } from "./result.ts";
+export type { BindingElement, FiredStep, SelectionPolicy } from "./step.ts";
+export { definitionOrder, enabledElements, fireStep } from "./step.ts";
 export type { Token } from "./token.ts";

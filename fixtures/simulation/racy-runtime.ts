@@ -1,26 +1,17 @@
 // Planted defect: steps do not wait for each other, so two steps can read the same marking.
-import type { Binding, Result, TransitionId } from "../../packages/petri-net/src/index.ts";
-import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
-import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
+import { fireStep } from "../../packages/petri-net/src/index.ts";
+import type { Runtime, RuntimeOptions, Stepped } from "../../packages/runtime/src/index.ts";
 
 export function createRacyRuntime(options: RuntimeOptions): Runtime {
 	return {
-		step: async (id: TransitionId, binding: Binding): Promise<Result<NetInstanceState, StepFailure>> => {
-			const transition = options.net.transitions.find((candidate) => candidate.id === id);
-			if (transition === undefined) {
-				return err({ kind: "unknown-transition", transition: id });
-			}
+		step: async (): Promise<Stepped> => {
 			const state = await options.store.load();
-			const fired = fire(transition, binding, state.marking);
-			if (!fired.ok) {
-				return fired;
-			}
-			const next = {
-				marking: fired.value,
-				occurrences: [...state.occurrences, { transition: id, binding, at: options.clock.now() }],
-			};
+			const step = fireStep(options.net, state.marking, options.policy);
+			const at = options.clock.now();
+			const fired = step.fired.map((element) => ({ ...element, at }));
+			const next = { marking: step.marking, occurrences: [...state.occurrences, ...fired] };
 			await options.store.commit(next);
-			return ok(next);
+			return { fired, state: next };
 		},
 	};
 }

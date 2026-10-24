@@ -16,8 +16,8 @@ Each state carries only the fields that are true in that state. In a `default` b
 write `value satisfies never`.
 
 ```ts
-// packages/runtime/src/runtime.ts
-export type StepFailure = NotABinding | NotEnabled | UnknownTransition;
+// packages/petri-net/src/fire.ts
+function whyNot(transition: Transition, binding: Binding, marking: Marking): NotABinding | NotEnabled | undefined {
 ```
 
 Pattern: Vanderkam Item 29 "Prefer Types That Always Represent Valid States"; Pocock "satisfies never".

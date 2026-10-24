@@ -15,7 +15,7 @@ import {
 export type Fire = typeof fire;
 
 /** The reference model: a mutable list of tokens per place, written in the plainest possible way. */
-type Model = { tokens: Map<PlaceId, Token[]> };
+export type Model = { tokens: Map<PlaceId, Token[]> };
 
 type Real = { marking: Marking };
 
@@ -66,12 +66,16 @@ export function modelEnables(
 
 function modelFire(model: Model, transition: Transition, binding: Binding): void {
 	modelTake(model, transition, binding);
+	modelGive(model, transition, binding);
+}
+
+export function modelGive(model: Model, transition: Transition, binding: Binding): void {
 	for (const arc of transition.outputs) {
 		model.tokens.set(arc.place.id, [...(model.tokens.get(arc.place.id) ?? []), ...arc.expression(binding)]);
 	}
 }
 
-function modelTake(model: Model, transition: Transition, binding: Binding): void {
+export function modelTake(model: Model, transition: Transition, binding: Binding): void {
 	for (const [place, taken] of modelDemand(transition, binding)) {
 		const left = [...(model.tokens.get(place) ?? [])];
 		for (const token of taken) {

@@ -1,6 +1,6 @@
 import fc from "fast-check";
-import type { Binding, ColourSet, Marking, Net, Place, Transition, TransitionId } from "@petrus/petri-net";
-import { fire, placeId, transitionId } from "@petrus/petri-net";
+import type { BindingElement, ColourSet, Marking, Net, Place, SelectionPolicy, Transition } from "@petrus/petri-net";
+import { definitionOrder, fire, fireStep, placeId, transitionId } from "@petrus/petri-net";
 import type { NetInstanceState, NetInstanceStore, Runtime, RuntimeOptions } from "../src/index.ts";
 import { createDisk, StoreCrashed } from "./controlled-store.ts";
 
@@ -22,7 +22,7 @@ export function move(id: string, from: Place, to: Place): Transition<"j"> {
 	};
 }
 
-/** Two transitions compete for each job token; a third returns it. */
+/** Two transitions compete for each job token; a third returns it. The policy decides who wins. */
 export const contested: Net = {
 	places: [ready, left, right],
 	transitions: [move("take-left", ready, left), move("take-right", ready, right), move("give-back", left, ready)],
@@ -30,40 +30,40 @@ export const contested: Net = {
 
 export const initialState: NetInstanceState = { marking: { [ready.id]: ["j1", "j2"] }, occurrences: [] };
 
-/** One step: a transition and the binding it fires with. */
-type Step = { readonly transition: TransitionId; readonly binding: Binding };
-
-const stepArbitrary: fc.Arbitrary<Step> = fc.record({
-	transition: fc.constantFrom(...contested.transitions.map((transition) => transition.id)),
-	binding: fc.record({ j: fc.constantFrom("j1", "j2") }),
-});
+/** Policies that keep, reverse, or cut the candidates to one, so the competing transitions both get to fire. */
+const policyArbitrary: fc.Arbitrary<SelectionPolicy> = fc.constantFrom<SelectionPolicy>(
+	definitionOrder,
+	(enabled) => [...enabled].reverse(),
+	(enabled) => enabled.slice(0, 1),
+);
 
 const fixedClock = { now: (): number => 1_000 };
 
-function fireStep(marking: Marking, step: Step): Marking | undefined {
-	const transition = contested.transitions.find((candidate) => candidate.id === step.transition);
-	const fired = transition === undefined ? undefined : fire(transition, step.binding, marking);
-	return fired?.ok === true ? fired.value : undefined;
-}
-
-/** Replays the occurrence log from the initial marking. A consistent state gives back its own marking. */
+/** Replays the occurrence log one binding element at a time. A consistent state gives back its own marking. */
 function replay(occurrences: NetInstanceState["occurrences"]): Marking | undefined {
-	return occurrences.reduce<Marking | undefined>(
-		(marking, occurrence) => (marking === undefined ? undefined : fireStep(marking, occurrence)),
-		initialState.marking,
-	);
+	return occurrences.reduce<Marking | undefined>((marking, occurrence) => {
+		const transition = contested.transitions.find((candidate) => candidate.id === occurrence.transition);
+		const fired =
+			marking === undefined || transition === undefined ? undefined : fire(transition, occurrence.binding, marking);
+		return fired?.ok === true ? fired.value : undefined;
+	}, initialState.marking);
 }
 
-/** The steps that fire when each step runs once, in order, from the initial marking. */
-function modelLog(steps: readonly Step[]): readonly Step[] {
-	const fired: Step[] = [];
+/** Equal markings: the same places with the same token lists. The order of places in the object does not count. */
+function sameMarking(left: Marking | undefined, right: Marking): boolean {
+	const sorted = (marking: Marking): string =>
+		JSON.stringify(Object.entries(marking).sort(([a], [b]) => a.localeCompare(b)));
+	return left !== undefined && sorted(left) === sorted(right);
+}
+
+/** The binding elements that `count` steps fire, in order, from the initial marking. */
+function modelLog(count: number, policy: SelectionPolicy): readonly BindingElement[] {
+	const fired: BindingElement[] = [];
 	let marking = initialState.marking;
-	for (const step of steps) {
-		const next = fireStep(marking, step);
-		if (next !== undefined) {
-			marking = next;
-			fired.push(step);
-		}
+	for (let index = 0; index < count; index += 1) {
+		const step = fireStep(contested, marking, policy);
+		marking = step.marking;
+		fired.push(...step.fired);
 	}
 	return fired;
 }
@@ -72,32 +72,36 @@ function modelLog(steps: readonly Step[]): readonly Step[] {
  * After a crash at any commit and a reopen that runs the rest of the steps, the stored marking is the replay of the
  * stored log, and the log is what the model gives: the crashed step's commit did not land, so it ran again.
  */
-export function crashCutProperty(factory: RuntimeFactory): fc.IAsyncProperty<[readonly Step[], number]> {
-	return fc.asyncProperty(fc.array(stepArbitrary, { maxLength: 8 }), fc.nat({ max: 8 }), async (steps, cut) => {
+export function crashCutProperty(factory: RuntimeFactory): fc.IAsyncProperty<[number, number, SelectionPolicy]> {
+	return fc.asyncProperty(fc.nat({ max: 8 }), fc.nat({ max: 8 }), policyArbitrary, async (count, cut, policy) => {
 		const disk = createDisk(initialState);
-		const first = factory({ net: contested, store: disk.open({ crashAtCommit: cut }), clock: fixedClock });
-		const survivors: Step[] = [];
-		for (const step of steps) {
-			const outcome = await first.step(step.transition, step.binding).catch((error: unknown) => {
-				if (error instanceof StoreCrashed) {
-					return "crashed" as const;
-				}
-				throw error;
-			});
-			if (outcome === "crashed") {
-				break;
-			}
-			survivors.push(step);
+		const first = factory({ net: contested, store: disk.open({ crashAtCommit: cut }), policy, clock: fixedClock });
+		let survivors = 0;
+		while (survivors < count && (await stepSurvives(first))) {
+			survivors += 1;
 		}
-		const second = factory({ net: contested, store: disk.open(), clock: fixedClock });
-		for (const step of steps.slice(survivors.length)) {
-			await second.step(step.transition, step.binding);
+		const second = factory({ net: contested, store: disk.open(), policy, clock: fixedClock });
+		for (let index = survivors; index < count; index += 1) {
+			await second.step();
 		}
 		const stored = disk.stored();
-		const consistent = JSON.stringify(replay(stored.occurrences)) === JSON.stringify(stored.marking);
+		const consistent = sameMarking(replay(stored.occurrences), stored.marking);
 		const log = stored.occurrences.map(({ transition, binding }) => ({ transition, binding }));
-		return consistent && JSON.stringify(log) === JSON.stringify(modelLog(steps));
+		return consistent && JSON.stringify(log) === JSON.stringify(modelLog(count, policy));
 	});
+}
+
+/** Runs one step; false when the store crashed under it. Any other error is a real failure. */
+async function stepSurvives(runtime: Runtime): Promise<boolean> {
+	try {
+		await runtime.step();
+		return true;
+	} catch (error: unknown) {
+		if (error instanceof StoreCrashed) {
+			return false;
+		}
+		throw error;
+	}
 }
 
 /**
@@ -111,19 +115,19 @@ function scheduledStore(scheduler: fc.Scheduler, raw: NetInstanceStore): NetInst
 	};
 }
 
-/** Concurrent steps under every interleaving: each step the runtime acknowledged is in the stored log. */
-export function raceProperty(factory: RuntimeFactory): fc.IAsyncProperty<[fc.Scheduler, readonly Step[]]> {
+/** Concurrent steps under every interleaving: each occurrence the runtime acknowledged is in the stored log. */
+export function raceProperty(factory: RuntimeFactory): fc.IAsyncProperty<[fc.Scheduler, number, SelectionPolicy]> {
 	return fc.asyncProperty(
 		fc.scheduler(),
-		fc.array(stepArbitrary, { minLength: 2, maxLength: 4 }),
-		async (scheduler, steps) => {
+		fc.integer({ min: 2, max: 4 }),
+		policyArbitrary,
+		async (scheduler, count, policy) => {
 			const disk = createDisk(initialState);
 			const store = scheduledStore(scheduler, disk.open());
-			const runtime = factory({ net: contested, store, clock: fixedClock });
-			const results = await scheduler.waitFor(
-				Promise.all(steps.map((step) => runtime.step(step.transition, step.binding))),
-			);
-			const acknowledged = results.filter((result) => result.ok).length;
+			const runtime = factory({ net: contested, store, policy, clock: fixedClock });
+			const steps = Array.from({ length: count }, () => runtime.step());
+			const results = await scheduler.waitFor(Promise.all(steps));
+			const acknowledged = results.reduce((sum, result) => sum + result.fired.length, 0);
 			return acknowledged === disk.stored().occurrences.length;
 		},
 	);

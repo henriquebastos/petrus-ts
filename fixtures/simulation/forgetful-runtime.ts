@@ -1,18 +1,15 @@
-// Planted defect: steps report success but never commit, so the store keeps its initial state.
-import type { Binding, Result, TransitionId } from "../../packages/petri-net/src/index.ts";
-import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
-import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
+// Planted defect: steps report what they fired but never commit, so the store keeps its initial state.
+import { fireStep } from "../../packages/petri-net/src/index.ts";
+import type { Runtime, RuntimeOptions, Stepped } from "../../packages/runtime/src/index.ts";
 
 export function createForgetfulRuntime(options: RuntimeOptions): Runtime {
 	return {
-		step: async (id: TransitionId, binding: Binding): Promise<Result<NetInstanceState, StepFailure>> => {
-			const transition = options.net.transitions.find((candidate) => candidate.id === id);
-			if (transition === undefined) {
-				return err({ kind: "unknown-transition", transition: id });
-			}
+		step: async (): Promise<Stepped> => {
 			const state = await options.store.load();
-			const fired = fire(transition, binding, state.marking);
-			return fired.ok ? ok({ marking: fired.value, occurrences: state.occurrences }) : fired;
+			const step = fireStep(options.net, state.marking, options.policy);
+			const at = options.clock.now();
+			const fired = step.fired.map((element) => ({ ...element, at }));
+			return { fired, state: { marking: step.marking, occurrences: [...state.occurrences, ...fired] } };
 		},
 	};
 }

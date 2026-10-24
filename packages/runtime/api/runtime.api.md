@@ -4,13 +4,10 @@
 
 ```ts
 
-import type { Binding } from '@petrus/petri-net';
+import type { BindingElement } from '@petrus/petri-net';
 import type { Marking } from '@petrus/petri-net';
 import type { Net } from '@petrus/petri-net';
-import type { NotABinding } from '@petrus/petri-net';
-import type { NotEnabled } from '@petrus/petri-net';
-import type { Result } from '@petrus/petri-net';
-import type { TransitionId } from '@petrus/petri-net';
+import type { SelectionPolicy } from '@petrus/petri-net';
 
 // @public
 export type Clock = {
@@ -33,31 +30,27 @@ export type NetInstanceStore = {
 };
 
 // @public
-export type Occurrence = {
-    readonly transition: TransitionId;
-    readonly binding: Binding;
+export type Occurrence = BindingElement & {
     readonly at: number;
 };
 
 // @public
 export type Runtime = {
-    readonly step: (transition: TransitionId, binding: Binding) => Promise<Result<NetInstanceState, StepFailure>>;
+    readonly step: () => Promise<Stepped>;
 };
 
 // @public
 export type RuntimeOptions = {
     readonly net: Net;
     readonly store: NetInstanceStore;
+    readonly policy: SelectionPolicy;
     readonly clock: Clock;
 };
 
 // @public
-export type StepFailure = NotABinding | NotEnabled | UnknownTransition;
-
-// @public
-export type UnknownTransition = {
-    readonly kind: "unknown-transition";
-    readonly transition: TransitionId;
+export type Stepped = {
+    readonly fired: readonly Occurrence[];
+    readonly state: NetInstanceState;
 };
 
 // (No @packageDocumentation comment for this package)

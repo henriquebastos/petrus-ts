@@ -1,8 +1,19 @@
 import fc from "fast-check";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import type { Binding, ColourSet, Marking, OutputArc, Place, PlaceId, Token, Transition } from "../src/index.ts";
-import { placeId, tokensAt, transitionId } from "../src/index.ts";
+import type {
+	Binding,
+	ColourSet,
+	Marking,
+	Net,
+	OutputArc,
+	Place,
+	PlaceId,
+	SelectionPolicy,
+	Token,
+	Transition,
+} from "../src/index.ts";
+import { definitionOrder, placeId, tokensAt, transitionId } from "../src/index.ts";
 
 const bit = Type.Integer({ minimum: 0, maximum: 1 });
 
@@ -145,6 +156,26 @@ export const markingArbitrary: fc.Arbitrary<Marking> = fc
 			}),
 		),
 	);
+
+/** One to three transitions over the shared places, with ids t1, t2, t3 in definition order. */
+export const netArbitrary: fc.Arbitrary<Net> = fc
+	.array(transitionArbitrary, { minLength: 1, maxLength: 3 })
+	.map((transitions) => ({
+		places,
+		transitions: transitions.map((transition, index) => ({
+			...transition,
+			id: transitionId(`t${String(index + 1)}`),
+		})),
+	}));
+
+/** Policies that keep, reverse, thin out, repeat, or drop the candidates. */
+export const policyArbitrary: fc.Arbitrary<SelectionPolicy> = fc.constantFrom<SelectionPolicy>(
+	definitionOrder,
+	(enabled) => [...enabled].reverse(),
+	(enabled) => enabled.filter((_element, index) => index % 2 === 0),
+	(enabled) => [...enabled, ...enabled],
+	(enabled) => enabled.filter((element) => element.transition !== transitionId("t1")),
+);
 
 /** A marking, a transition, and a binding picked mostly from the marking's tokens. */
 export const firingArbitrary: fc.Arbitrary<{ marking: Marking; transition: Transition; binding: Binding }> = fc

@@ -58,20 +58,31 @@ export function fire(
 	if (failure !== undefined) {
 		return err(failure);
 	}
-	const consumed = [...demandByPlace(transition, binding)].reduce(
+	return ok(produce(transition, binding, consume(transition, binding, marking)));
+}
+
+/** Removes the tokens that the input arcs take. The binding element must be enabled in `marking`. */
+export function consume(transition: Transition, binding: Binding, marking: Marking): Marking {
+	return [...demandByPlace(transition, binding)].reduce(
 		(next, [place, wanted]) => removeTokens(next, place, wanted),
 		marking,
 	);
-	return ok(
-		transition.outputs.reduce(
-			(next, arc) => addTokens(next, arc.place.id, produced(transition, arc, binding)),
-			consumed,
-		),
+}
+
+/** Adds the tokens that the output arcs give, after the tokens already on each place. */
+export function produce(transition: Transition, binding: Binding, marking: Marking): Marking {
+	return transition.outputs.reduce(
+		(next, arc) => addTokens(next, arc.place.id, produced(transition, arc, binding)),
+		marking,
 	);
 }
 
 /** Why the binding element cannot fire, or `undefined` when it is enabled. */
-function whyNot(transition: Transition, binding: Binding, marking: Marking): NotABinding | NotEnabled | undefined {
+export function whyNot(
+	transition: Transition,
+	binding: Binding,
+	marking: Marking,
+): NotABinding | NotEnabled | undefined {
 	const problems = bindingProblems(transition, binding);
 	if (problems.length > 0) {
 		return { kind: "not-a-binding", transition: transition.id, problems };

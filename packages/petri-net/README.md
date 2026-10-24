@@ -1,6 +1,7 @@
 # @petrus/petri-net
 
-A coloured Petri net: typed places, transitions with variables and guards, bindings, markings and the firing rule.
+A coloured Petri net: typed places, transitions with variables and guards, bindings, markings, the firing rule and
+steps.
 The package is pure: it has no clock, no disk and no npm dependency.
 
 ```ts
@@ -29,6 +30,9 @@ if (fired.ok) {
  // fired.error is not-a-binding (the problems) or not-enabled (the tokens each place lacks)
 }
 ```
+
+`fireStep(net, marking, definitionOrder)` selects and fires a whole step: every enabled binding element, in the
+policy's order, whose tokens are still free.
 
 - [docs/spec.md](docs/spec.md): terms, invariants and failures, each with the test that proves it.
 - [api/petri-net.api.md](api/petri-net.api.md): the public signatures. `pnpm lint:api` keeps it current.

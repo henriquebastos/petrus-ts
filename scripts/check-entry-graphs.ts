@@ -15,10 +15,10 @@ type Budget = { readonly maxFiles: number; readonly forbid: readonly RegExp[] };
 /** Budgets are the current graph sizes. Raise one on purpose, in the same change that grows the graph. */
 const budgets: Readonly<Record<string, Budget>> = {
 	"packages/petri-net/src/index.ts": {
-		maxFiles: 8,
+		maxFiles: 9,
 		forbid: [/^node:/, /node_modules\//, /^packages\/(?!petri-net\/)/],
 	},
-	"packages/runtime/src/index.ts": { maxFiles: 11, forbid: [/^node:/] },
+	"packages/runtime/src/index.ts": { maxFiles: 12, forbid: [/^node:/] },
 };
 
 const cruiseOutput = Type.Object({

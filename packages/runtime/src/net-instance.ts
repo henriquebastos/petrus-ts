@@ -1,7 +1,10 @@
-import type { Binding, Marking, TransitionId } from "@petrus/petri-net";
+import type { BindingElement, Marking } from "@petrus/petri-net";
 
-/** One firing that the runtime committed: the binding element that occurred, and when. */
-export type Occurrence = { readonly transition: TransitionId; readonly binding: Binding; readonly at: number };
+/**
+ * One binding element that the runtime committed, and when. The occurrences of one step share `at` and are in
+ * firing order, so replaying them one by one with `fire` gives the step's tokens.
+ */
+export type Occurrence = BindingElement & { readonly at: number };
 
 /** The stored state of one net instance. The marking and the occurrence log change in the same commit. */
 export type NetInstanceState = { readonly marking: Marking; readonly occurrences: readonly Occurrence[] };

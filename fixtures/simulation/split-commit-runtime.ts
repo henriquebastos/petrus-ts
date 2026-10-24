@@ -1,31 +1,25 @@
 // Planted defect: the marking and the occurrence log land in two commits, so a crash between them splits them.
-import type { Binding, Result, TransitionId } from "../../packages/petri-net/src/index.ts";
-import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
-import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
+import { fireStep } from "../../packages/petri-net/src/index.ts";
+import type { Runtime, RuntimeOptions, Stepped } from "../../packages/runtime/src/index.ts";
 
 export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {
 	let tail: Promise<unknown> = Promise.resolve();
-	const stepNow = async (id: TransitionId, binding: Binding): Promise<Result<NetInstanceState, StepFailure>> => {
-		const transition = options.net.transitions.find((candidate) => candidate.id === id);
-		if (transition === undefined) {
-			return err({ kind: "unknown-transition", transition: id });
-		}
+	const stepNow = async (): Promise<Stepped> => {
 		const state = await options.store.load();
-		const fired = fire(transition, binding, state.marking);
-		if (!fired.ok) {
-			return fired;
+		const step = fireStep(options.net, state.marking, options.policy);
+		if (step.fired.length === 0) {
+			return { fired: [], state };
 		}
-		await options.store.commit({ marking: fired.value, occurrences: state.occurrences });
-		const next = {
-			marking: fired.value,
-			occurrences: [...state.occurrences, { transition: id, binding, at: options.clock.now() }],
-		};
+		await options.store.commit({ marking: step.marking, occurrences: state.occurrences });
+		const at = options.clock.now();
+		const fired = step.fired.map((element) => ({ ...element, at }));
+		const next = { marking: step.marking, occurrences: [...state.occurrences, ...fired] };
 		await options.store.commit(next);
-		return ok(next);
+		return { fired, state: next };
 	};
 	return {
-		step: (id, binding) => {
-			const run = tail.then(() => stepNow(id, binding));
+		step: () => {
+			const run = tail.then(stepNow);
 			tail = run.catch(() => undefined);
 			return run;
 		},
