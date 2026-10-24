@@ -31,6 +31,19 @@ module.exports = {
 			to: { path: "^packages/([^/]+)/src/", pathNot: ["^packages/$1/", "^packages/[^/]+/src/index\\.ts$"] },
 		},
 		{
+			name: "examples-use-package-roots",
+			severity: "error",
+			comment: "An example is a host app: it imports @petrus/x like any app, never another file of a package.",
+			from: { path: "^examples/" },
+			to: { path: "^packages/", pathNot: ["^packages/[^/]+/src/index\\.ts$"] },
+		},
+		{
+			name: "packages-never-import-examples",
+			severity: "error",
+			from: { path: "^packages/" },
+			to: { path: "^examples/" },
+		},
+		{
 			name: "petri-net-is-pure",
 			severity: "error",
 			comment: "petri-net imports no Node builtin and no npm package: it runs anywhere and needs no clock or disk.",
@@ -40,8 +53,8 @@ module.exports = {
 		{
 			name: "src-never-imports-tests",
 			severity: "error",
-			from: { path: "^packages/[^/]+/src/" },
-			to: { path: "^packages/[^/]+/test/" },
+			from: { path: "^(packages|examples)/[^/]+/src/" },
+			to: { path: "^(packages|examples)/[^/]+/test/" },
 		},
 		{
 			name: "not-to-unresolvable",

@@ -13,6 +13,7 @@ export default mergeConfig(
 		resolve: {
 			alias: { "@petrus/petri-net": fileURLToPath(new URL("packages/petri-net/src/index.ts", import.meta.url)) },
 		},
-		test: { setupFiles: ["test/mutation-seed.ts"] },
+		// Stryker mutates only packages, so only package tests may kill a mutant; the examples are not the proof.
+		test: { setupFiles: ["test/mutation-seed.ts"], exclude: ["examples/**"] },
 	}),
 );

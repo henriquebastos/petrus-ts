@@ -14,6 +14,7 @@ test("the docs of the real repository pass the docs check", async () => {
 test("the docs check reports each planted docs defect, in root docs and in package docs", async () => {
 	const root = sandbox({
 		packages: "packages",
+		examples: "examples",
 		"docs/too-long.md": "fixtures/docs/too-long.md",
 		"docs/outside.md": "fixtures/docs/outside.md",
 		"docs/missing-path.md": "fixtures/docs/missing-path.md",

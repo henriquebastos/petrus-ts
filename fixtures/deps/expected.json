@@ -30,5 +30,13 @@
 	{
 		"rule": "not-to-unresolvable",
 		"from": "packages/runtime/src/missing.ts"
+	},
+	{
+		"rule": "examples-use-package-roots",
+		"from": "examples/app/src/deep-import.ts"
+	},
+	{
+		"rule": "packages-never-import-examples",
+		"from": "packages/runtime/src/uses-example.ts"
 	}
 ]

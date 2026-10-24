@@ -21,7 +21,9 @@ function unpinned(versions: Readonly<Record<string, string>>): readonly string[]
 
 const manifestPaths = [
 	"package.json",
-	...readdirSync(join(repoRoot, "packages")).map((name) => join("packages", name, "package.json")),
+	...["packages", "examples"].flatMap((folder) =>
+		readdirSync(join(repoRoot, folder)).map((name) => join(folder, name, "package.json")),
+	),
 ];
 
 test("every dependency of every package is pinned to one version", () => {

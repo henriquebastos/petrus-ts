@@ -1,0 +1,6 @@
+{
+	"extends": "../../tsconfig.base.json",
+	// An app, not a library: it has no API report, so its exported schemas may keep their inferred types.
+	"compilerOptions": { "types": ["node"], "isolatedDeclarations": false },
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}

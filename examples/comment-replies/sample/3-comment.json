@@ -1,0 +1,22 @@
+{
+	"id": "d3",
+	"event": "issue_comment",
+	"payload": {
+		"action": "created",
+		"repository": {
+			"id": 4001
+		},
+		"issue": {
+			"number": 7,
+			"pull_request": {
+				"url": "https://api.github.com/repos/o/r/pulls/7"
+			}
+		},
+		"comment": {
+			"id": 502,
+			"user": {
+				"id": 92
+			}
+		}
+	}
+}

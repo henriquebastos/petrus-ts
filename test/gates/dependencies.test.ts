@@ -8,6 +8,7 @@ import { readJson, repoRoot, runTool } from "./tools.ts";
 const ruleOnFile = Type.Object({ rule: Type.String(), from: Type.String() });
 
 const cruiseOutput = Type.Object({
+	modules: Type.Array(Type.Object({ source: Type.String() })),
 	summary: Type.Object({
 		totalCruised: Type.Number(),
 		violations: Type.Array(Type.Object({ from: Type.String(), rule: Type.Object({ name: Type.String() }) })),
@@ -15,7 +16,7 @@ const cruiseOutput = Type.Object({
 });
 
 async function cruise(cwd: string, config: string): Promise<Static<typeof cruiseOutput>> {
-	const run = await runTool("depcruise", ["packages", "--config", config, "--output-type", "json"], cwd);
+	const run = await runTool("depcruise", ["packages", "examples", "--config", config, "--output-type", "json"], cwd);
 	return parseJson(run.stdout, cruiseOutput);
 }
 
@@ -29,8 +30,9 @@ test("dependency-cruiser reports each planted violation by rule name", async () 
 	);
 });
 
-test("dependency-cruiser sees the real packages and their cross-package edges", async () => {
+test("dependency-cruiser sees the real packages, the examples and their cross-package edges", async () => {
 	const output = await cruise(repoRoot, ".dependency-cruiser.cjs");
 	expect(output.summary.violations).toStrictEqual([]);
 	expect(output.summary.totalCruised).toBeGreaterThan(10);
+	expect(output.modules.some((module) => module.source.startsWith("examples/"))).toBe(true);
 });

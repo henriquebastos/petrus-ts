@@ -101,7 +101,7 @@ export default tseslint.config(
 			],
 		},
 	},
-	{ files: ["**/packages/*/src/**/*.ts"], rules: ambientWorld },
+	{ files: ["**/packages/*/src/**/*.ts", "**/examples/*/src/**/*.ts"], rules: ambientWorld },
 	{
 		// Pocock's default-exports rule allows a default export where a tool requires one.
 		files: ["*.config.ts", "*.config.js"],

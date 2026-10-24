@@ -46,9 +46,9 @@ function textFiles(directory: string): readonly string[] {
 	});
 }
 
-/** `packages/x/` for a file in a package, so a package doc can name `src/index.ts`. */
+/** `packages/x/` or `examples/x/` for a file in a package, so a package doc can name `src/index.ts`. */
 function packageRoot(file: string): string | undefined {
-	const match = /^packages\/[^/]+\//.exec(file);
+	const match = /^(packages|examples)\/[^/]+\//.exec(file);
 	return match?.[0];
 }
 

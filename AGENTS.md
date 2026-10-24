@@ -6,6 +6,7 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Colour sets, bindings, markings, firing, validation   | `packages/petri-net/docs/spec.md`                                                            |
 | Enqueues, steps, stores, crashes, concurrency         | `packages/runtime/docs/spec.md`                                                              |
+| A host app: request ids, the edge, a store, settling  | `examples/comment-replies/README.md`                                                         |
 | Code style                                            | `docs/style-guide.md`                                                                        |
 | A lint, type, dependency or test gate                 | the config file and its comments, the gate test in `test/gates/`, its fixture in `fixtures/` |
 
