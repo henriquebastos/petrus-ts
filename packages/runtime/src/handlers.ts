@@ -25,16 +25,23 @@ export type HandlerTransition<V extends string = string> = Omit<Transition<V>, "
 	readonly variants: Readonly<Record<string, Variant<V>>>;
 };
 
+/**
+ * A result that counts `delayMs` after the occurrence that started the work, as the delay `@+delayMs` of a timed net.
+ * Until then the operation stays in flight. The wait is a Durable sleep, so it survives a crash.
+ */
+export type DelayedResult = { readonly delayMs: number; readonly result: HandlerResult };
+
 /** What a handler gets besides the binding. `operationId` names this run of the work (see `Operation`). */
 export type HandlerContext = { readonly operationId: string };
 
 /**
  * A handler transition with the function that does its work outside the net. `run` returns an expected failure as a
- * variant. It throws only for a bug or an outage; then the operation stays in flight and runs again.
+ * variant, and a result that counts later as a delayed result. It throws only for a bug or an outage; then the
+ * operation stays in flight and runs again.
  */
 export type Handler<V extends string = string> = {
 	readonly transition: HandlerTransition<V>;
-	readonly run: (binding: Binding<V>, context: HandlerContext) => Promise<HandlerResult>;
+	readonly run: (binding: Binding<V>, context: HandlerContext) => Promise<HandlerResult | DelayedResult>;
 };
 
 /** The place that holds one token, the binding, for each run of the handler transition that has not ended. */

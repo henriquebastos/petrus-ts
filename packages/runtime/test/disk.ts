@@ -11,9 +11,12 @@ import type {
 	Wake,
 } from "@earendil-works/pi-durable";
 import { createRegistry, Harness, MemoryStorage, SessionFailed } from "@earendil-works/pi-durable";
-import type { Clock, NetInstanceState } from "../src/index.ts";
+import type { Batch, Clock, NetInstanceState, Runtime } from "../src/index.ts";
 import type { NetInstanceRecord } from "../src/net-instance-record.ts";
 import { netInstanceRecord, readNetInstance } from "../src/net-instance-record.ts";
+
+/** More clock moves than any test needs: a settle that needs more never ends. */
+const clockMoveLimit = 1_000;
 
 /** The context of every Durable call in the tests. */
 export const context: Context = BACKGROUND_CONTEXT;
@@ -46,7 +49,8 @@ export type Process = {
 	readonly runReady: () => Promise<void>;
 	/**
 	 * Runs the ready tasks, moves the clock to the earliest sleep, and repeats until no task sleeps. It rejects with
-	 * `Crashed` when the process dies. A net that never ends makes it run for ever.
+	 * `Crashed` when the process dies, and with an error when the tasks still sleep after `clockMoveLimit` moves, as
+	 * when a phase throws each time it runs.
 	 */
 	readonly settle: () => Promise<void>;
 };
@@ -106,7 +110,7 @@ export function createDisk(extensions: readonly Extension[], clock: TestClock = 
 			await Promise.race([wakes.inactive(harness), died]);
 		};
 		const settle = async (): Promise<void> => {
-			for (;;) {
+			for (let moves = 0; moves < clockMoveLimit; moves += 1) {
 				await runReady();
 				const { at } = harness.wake();
 				if (at === undefined) {
@@ -114,6 +118,7 @@ export function createDisk(extensions: readonly Extension[], clock: TestClock = 
 				}
 				clock.moveTo(at);
 			}
+			throw new Error(`the tasks still sleep after ${String(clockMoveLimit)} clock moves`);
 		};
 		return { harness, runReady, settle };
 	}
@@ -143,6 +148,36 @@ export async function inProcess(
 	} finally {
 		await process.harness.close(context);
 	}
+}
+
+/**
+ * A host's run after a crash: a process that dies at `faults` enqueues `batch` and settles; after a crash, the clock
+ * moves on by `outageMs` and a new process does the same, up to four processes. A batch that landed before the crash
+ * adds nothing the second time. It returns the time at which each process opened.
+ */
+export async function enqueueAndSettle(
+	disk: Disk,
+	faults: Faults,
+	runtime: Runtime,
+	batch: Batch,
+	outageMs = 0,
+): Promise<readonly number[]> {
+	const opened: number[] = [];
+	let next = faults;
+	for (let processes = 0; processes < 4; processes += 1) {
+		opened.push(disk.clock.now());
+		const outcome = await inProcess(disk, next, async ({ harness, settle }) => {
+			const instance = runtime.instance(harness, (await harness.root(context)).id);
+			await instance.enqueue(batch, context);
+			await settle();
+		});
+		if (outcome === "done") {
+			return opened;
+		}
+		next = {};
+		disk.clock.moveTo(disk.clock.now() + outageMs);
+	}
+	return opened;
 }
 
 /** A planted fault, as storage threw it or as the failed Session carries it. */

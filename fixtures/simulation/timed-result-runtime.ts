@@ -21,12 +21,16 @@ export function createTimedResultRuntime(options: RuntimeOptions): Runtime {
 		definition: {
 			...real.task.definition,
 			phases: {
+				...real.task.definition.phases,
 				run: async (running, taskRuntime, context) => {
 					const { id, binding } = running.input;
 					const transition = transitionId(running.input.transition);
 					const handler = handlers.find((candidate) => candidate.transition.id === transition);
 					try {
 						const result = await handler!.run(binding, { operationId: id });
+						if ("delayMs" in result) {
+							throw new Error("this planted defect runs no delayed result");
+						}
 						await taskRuntime.commit(async (tx) => {
 							const at = taskRuntime.now();
 							const tokens = { [resultPlaceId(transition)]: [resultToken(binding, result)] };

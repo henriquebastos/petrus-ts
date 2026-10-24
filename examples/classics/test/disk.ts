@@ -6,12 +6,29 @@ import { createRegistry, Harness, MemoryStorage, SessionFailed } from "@earendil
 import type { Marking } from "@petrus/petri-net";
 import { placeId } from "@petrus/petri-net";
 import type { Clock, NetInstance, Runtime } from "@petrus/runtime";
+import { flush } from "./flush.ts";
 
 /** The context of every Durable call in the tests. */
 export const context: Context = BACKGROUND_CONTEXT;
 
-/** The clock of the Harnesses and the runtimes. No classic handler throws, so no task sleeps and time stands still. */
-export const clock: Clock = { now: () => 0 };
+/** A clock that only the disks move, and only forward. */
+type TestClock = Clock & { readonly moveTo: (at: number) => void };
+
+/**
+ * The clock of the Harnesses and the runtimes. Only the timer of the simple protocol sleeps, and its wait counts from
+ * the start of its operation, so the tests can share one clock.
+ */
+export const clock: TestClock = createClock();
+
+function createClock(): TestClock {
+	let time = 0;
+	return {
+		now: () => time,
+		moveTo: (at) => {
+			time = Math.max(time, at);
+		},
+	};
+}
 
 /** The error of a process that died. */
 class Crashed extends Error {
@@ -21,7 +38,10 @@ class Crashed extends Error {
 /** One process over the disk: a new Harness, and the net instance in its root conversation. */
 type Process = {
 	readonly instance: NetInstance;
-	/** Runs the tasks until none is left. It rejects with `Crashed` when the process died. */
+	/**
+	 * Runs the ready tasks, moves the clock to the earliest sleep, and repeats until no task is left. It rejects with
+	 * `Crashed` when the process died.
+	 */
 	readonly settle: () => Promise<void>;
 	readonly close: () => Promise<void>;
 };
@@ -34,7 +54,12 @@ export type Disk = {
 	readonly last: () => Marking;
 };
 
-export function createDisk(): Disk {
+/**
+ * Durable storage in memory. `clockMoves`, when given, is where the clock may also move to the earliest sleep while
+ * tasks run, so a scheduler can end a sleep before other work. After a settle one clock move stays scheduled, and
+ * does nothing when its scheduler releases it.
+ */
+export function createDisk(clockMoves?: () => Promise<void>): Disk {
 	const storage = new DiskStorage();
 	const history: Marking[] = [];
 	const record = (publication: CommitPublication): void => {
@@ -48,7 +73,8 @@ export function createDisk(): Disk {
 		open: async (runtime, crashAt = Number.POSITIVE_INFINITY) => {
 			const registry = createRegistry();
 			registry.install(runtime.extension);
-			const options = { models: createModels(), registry, now: clock.now };
+			// The disk wakes every sleep itself (see `settled`), so the Harness arms no timer of its own.
+			const options = { models: createModels(), registry, now: clock.now, onWake: () => undefined };
 			storage.commitsLeft = crashAt;
 			const harness = await Harness.open(storage, options, context);
 			harness.subscribeCommits(record);
@@ -57,7 +83,8 @@ export function createDisk(): Disk {
 				throw error;
 			});
 			const instance = runtime.instance(harness, root.id);
-			return { instance, settle: () => settled(harness), close: () => harness.close(context) };
+			const settle = (): Promise<void> => settled(harness, clockMoves);
+			return { instance, settle, close: () => harness.close(context) };
 		},
 		history: () => history,
 		last: () => history.at(-1) ?? {},
@@ -97,15 +124,60 @@ export async function runToEnd(
 /** The kind of the Durable document that holds a net instance, so the history can tell it from Durable's own. */
 const netInstanceKind = "petrus.net-instance";
 
-/** Waits until no task is live, or rejects with `Crashed` when the process dies first. */
-async function settled(harness: Harness): Promise<void> {
+/**
+ * Runs the tasks, moving the clock to each sleep's end when no task can run, until no task is left. It rejects with
+ * `Crashed` when the process dies first. With `clockMoves`, the clock also moves to the earliest sleep each time it
+ * resolves.
+ */
+async function settled(harness: Harness, clockMoves?: () => Promise<void>): Promise<void> {
 	const died = harness.closed.then((end) => {
 		throw end.reason === "failed" && isPlantedCrash(end.error)
 			? new Crashed("the process died")
 			: new Error("the Session ended while the test waited on it", { cause: end });
 	});
 	died.catch(() => undefined);
-	await Promise.race([harness.waitForIdle(context), died]);
+	let done = false;
+	const moveEarly = async (moves: () => Promise<void>): Promise<void> => {
+		while (!done) {
+			await moves();
+			wakeEarliest(harness, done);
+		}
+	};
+	if (clockMoves !== undefined) {
+		moveEarly(clockMoves).catch(() => undefined);
+	}
+	try {
+		for (;;) {
+			harness.resume();
+			await Promise.race([quiet(harness), died]);
+			if (!wakeEarliest(harness, false)) {
+				return;
+			}
+		}
+	} finally {
+		done = true;
+	}
+}
+
+/** Moves the clock to the earliest sleep, and resumes the Harness. False when no task sleeps, or the settle ended. */
+function wakeEarliest(harness: Harness, ended: boolean): boolean {
+	if (ended) {
+		return false;
+	}
+	const { at } = harness.wake();
+	if (at === undefined) {
+		return false;
+	}
+	clock.moveTo(at);
+	harness.resume();
+	return true;
+}
+
+/** Waits until no task of the Harness can run now. No test arms a timer, so it checks after each flush. */
+async function quiet(harness: Harness): Promise<void> {
+	while (harness.wake().active) {
+		await flush();
+	}
 }
 
 /**

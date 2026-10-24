@@ -36,4 +36,5 @@ Session, `Context`) appear only where the code calls them.
 
 - [docs/spec.md](docs/spec.md): terms, guarantees, failures and limits, each with the test that proves it.
 - [docs/handlers.md](docs/handlers.md): handler transitions, operations and their tasks, with the same structure.
+- [docs/delays.md](docs/delays.md): delayed results, which wait on a Durable sleep.
 - [api/runtime.api.md](api/runtime.api.md): the public signatures. `pnpm lint:api` keeps it current.

@@ -11,8 +11,8 @@ import type {
 } from "../src/index.ts";
 import { withHandlers } from "../src/index.ts";
 import { startedOperations } from "../src/operations.ts";
-import type { Disk, Faults, TestClock } from "./disk.ts";
-import { context, createClock, createDisk, inProcess } from "./disk.ts";
+import type { Disk, TestClock } from "./disk.ts";
+import { context, createClock, createDisk, enqueueAndSettle, inProcess } from "./disk.ts";
 import type { Fault, RuntimeFactory } from "./properties.ts";
 import { everyCommitHeld, faultArbitrary, lastState } from "./properties.ts";
 
@@ -228,18 +228,7 @@ export function handlerFaultProperty(factory: RuntimeFactory): fc.IAsyncProperty
 		const service = createService(() => disk.history());
 		const runtime = factory(jobsOptions(service, clock));
 		const disk: Disk = createDisk([runtime.extension], clock);
-		let faults: Faults = { [fault.kind]: fault.commit };
-		for (let processes = 0; processes < 4; processes += 1) {
-			const outcome = await inProcess(disk, faults, async ({ harness, settle }) => {
-				const instance = runtime.instance(harness, (await harness.root(context)).id);
-				await instance.enqueue(firstBatch(jobs), context);
-				await settle();
-			});
-			if (outcome === "done") {
-				break;
-			}
-			faults = {};
-		}
+		await enqueueAndSettle(disk, { [fault.kind]: fault.commit }, runtime, firstBatch(jobs));
 		return handlersHeld(disk.history(), service, jobs);
 	});
 }

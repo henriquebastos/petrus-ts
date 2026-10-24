@@ -278,24 +278,24 @@ describe("createRuntime with handlers, examples", () => {
 	const operation = { id: "work/1", transition: work.id, binding };
 
 	test("an enqueue starts an operation and creates its task in one commit; the task runs the handler, records its result and steps until quiet", async () => {
-		const { disk, process, instance, service } = await opened();
+		const { disk, process, instance, service } = await opened(undefined, createClock(5));
 		const { fired } = await instance.enqueue(firstBatch(["j1"]), context);
-		expect(fired).toStrictEqual([{ kind: "occurrence", transition: work.id, binding, at: 0 }]);
+		expect(fired).toStrictEqual([{ kind: "occurrence", transition: work.id, binding, at: 5 }]);
 		expect(await instance.inFlight(context)).toStrictEqual([operation]);
 		const { tasks } = await process.harness.inspect(context);
 		expect(tasks.map(({ record }) => [record.kind, record.input])).toStrictEqual([
-			["petrus.operation:jobs", operation],
+			["petrus.operation:jobs", { ...operation, startedAt: 5 }],
 		]);
 		expect(service.calls().size).toBe(0);
 		await process.settle();
 		const ended = resultToken(binding, { variant: "done", value: 'receipt "j1" run 1' });
 		expect(lastState(disk.history()).log.slice(2)).toStrictEqual([
-			{ kind: "ingress", requestId: "result:work/1", tokens: { [result]: [ended] }, at: 0 },
+			{ kind: "ingress", requestId: "result:work/1", tokens: { [result]: [ended] }, at: 5 },
 			{
 				kind: "occurrence",
 				transition: transitionId("work:done"),
 				binding: { busy: binding, result: ended },
-				at: 0,
+				at: 5,
 			},
 		]);
 		expect(await instance.state(context)).toMatchObject({

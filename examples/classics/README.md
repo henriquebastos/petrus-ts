@@ -76,16 +76,18 @@ the place `Sent` and the handler transition `Wait` are added for the timer.
   network makes it.
 - `ReceivePacket` keeps a packet only when its number is `NextRec`, and puts an acknowledgement with the number
   it expects next on `C`. `ReceiveAck` sets `NextSend` to the number of the acknowledgement.
-- `Wait` is a handler transition, the retransmission timer. It takes the sent packet from `Sent` and holds it
-  until its work, a wait, ends; then its variant `elapsed` puts the packet back on `PacketsToSend`. This is the
-  delay `@+Wait` on that arc in the paper's timed net. The paper's other delays are the time that the handlers'
-  work takes.
+- `Wait` is a handler transition, the retransmission timer. It takes the sent packet from `Sent`. Its handler
+  returns the result `elapsed` with a delay, so the result counts a fixed wait after `SendPacket` fired; then
+  `elapsed` puts the packet back on `PacketsToSend`. This is the delay `@+Wait` on that arc in the paper's timed
+  net. The wait is a Durable sleep, so it survives a crash. The paper's other delays are the time that the
+  handlers' work takes.
 
 At every commit `DataReceived` is the data of the packets before `NextRec`, so the receiver gets the data once
 and in order. When no task is left, also after a crash at any commit and a run of a new process, all data is
-received and acknowledged, and no message or work is left. Tests: `test/simple-protocol.test.ts` "holds a sent
-packet until its timer runs out, and then sends it again if the network lost it" and "the receiver gets the data
-once and in order, under any losses, any order of messages and timers, and a crash at any commit".
+received and acknowledged, and no message or work is left. The property test moves the clock to a timer's end
+at any time, also while a message is in the network. Tests: `test/simple-protocol.test.ts` "sends a lost packet
+again when the wait of its timer ends, and not before" and "the receiver gets the data once and in order, under
+any losses, any order of messages and timer ends, and a crash at any commit".
 
 A rerun of a handler after a crash can send a message twice. The protocol keeps only the packet it expects, so
 it allows this.
@@ -106,8 +108,6 @@ it allows this.
   holds a fork that the philosopher between them needs. `definitionOrder` keeps no state, so it cannot hold a
   neighbour back for a philosopher who has waited long. Test: `test/dining-philosophers.test.ts` "lets a
   philosopher starve while both neighbours take turns, because definitionOrder keeps no state".
-- The timer does not survive a crash. After a crash the wait of a sent packet starts again, so the packet is sent
-  again later than planned. The protocol allows a late send.
 - A net that can fire for ever never becomes quiet. In the paper's untimed net, `SendPacket` puts the packet
   straight back on `PacketsToSend`, so it can fire in every step, and a commit throws after 1,000 steps. The timer
   lets each commit of this net end.

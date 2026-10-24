@@ -44,9 +44,15 @@ export type Committed = {
 export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
+export type DelayedResult = {
+    readonly delayMs: number;
+    readonly result: HandlerResult;
+};
+
+// @public
 export type Handler<V extends string = string> = {
     readonly transition: HandlerTransition<V>;
-    readonly run: (binding: Binding<V>, context: HandlerContext) => Promise<HandlerResult>;
+    readonly run: (binding: Binding<V>, context: HandlerContext) => Promise<HandlerResult | DelayedResult>;
 };
 
 // @public

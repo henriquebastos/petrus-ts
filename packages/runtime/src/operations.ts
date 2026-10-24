@@ -71,13 +71,22 @@ export function admitResult(
 	if (operation === undefined) {
 		throw new Error(`no operation ${operationId} has started`);
 	}
+	const batch = checkedResultBatch(net, operation, result);
+	const recorded = recordedIngress(state.log, batch.requestId);
+	return recorded === undefined ? admit(net, state, batch, at) : { kind: "repeated", ingress: recorded };
+}
+
+/**
+ * The batch that puts an operation's result on its result place, under the request id `result:<operation id>`. A
+ * result that does not fit the transition is a bug, so it throws.
+ */
+export function checkedResultBatch(net: Net, operation: Operation, result: HandlerResult): Batch {
 	const batch = {
-		requestId: resultRequestId(operationId),
+		requestId: resultRequestId(operation.id),
 		tokens: { [resultPlaceId(operation.transition)]: [resultToken(operation.binding, result)] },
 	};
 	checkBatch(net, batch);
-	const recorded = recordedIngress(state.log, batch.requestId);
-	return recorded === undefined ? admit(net, state, batch, at) : { kind: "repeated", ingress: recorded };
+	return batch;
 }
 
 /**

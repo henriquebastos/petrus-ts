@@ -10,7 +10,8 @@ import type { Handler, HandlerTransition } from "@petrus/runtime";
  *
  * The network's two transmissions and the retransmission timer are work outside the net, so they are handlers.
  * The network's result is a variant: `delivered` or `lost`. The timer takes a sent packet from `sent` and holds it
- * off `packetsToSend` until it runs out, so the sender sends a packet again only after a wait.
+ * off `packetsToSend` until its wait ends, so the sender sends a packet again only after a wait. Its result is
+ * delayed, so the wait is a Durable sleep and survives a crash.
  */
 const sequenceNumber: ColourSet = { name: "NO", contains: (token) => Number.isInteger(token) };
 const text: ColourSet = { name: "DATA", contains: (token) => typeof token === "string" };
@@ -162,10 +163,8 @@ export function initialMarking(data: readonly string[]): Marking {
 /** The network outside the net. `transmit` is true when it delivers. */
 export type Network = { readonly transmit: (message: Token, operationId: string) => Promise<boolean> };
 
-/** The clock outside the net. `wait` returns when the timer of one sent packet runs out. */
-export type Timer = { readonly wait: (packet: Token, operationId: string) => Promise<void> };
-
-export function simpleProtocolHandlers(network: Network, timer: Timer): readonly Handler[] {
+/** The handlers of the net: the network's two transmissions, and a timer that waits `waitMs` after each send. */
+export function simpleProtocolHandlers(network: Network, waitMs: number): readonly Handler[] {
 	const packets: Handler<"packet"> = {
 		transition: transmitPacket,
 		run: async ({ packet: moving }, { operationId }) => ({
@@ -182,10 +181,7 @@ export function simpleProtocolHandlers(network: Network, timer: Timer): readonly
 	};
 	const timeout: Handler<"packet"> = {
 		transition: wait,
-		run: async ({ packet: waited }, { operationId }) => {
-			await timer.wait(waited, operationId);
-			return { variant: "elapsed", value: waited };
-		},
+		run: ({ packet: waited }) => Promise.resolve({ delayMs: waitMs, result: { variant: "elapsed", value: waited } }),
 	};
 	return [packets, acks, timeout];
 }

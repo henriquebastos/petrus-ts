@@ -27,11 +27,12 @@ The core rule:
   log>`, so it stays the same after a restart. It is **in flight** until the log holds its result.
   `inFlight(context)` lists the operations in flight, in log order.
 - A **handler task** runs one operation. It is a Durable task of kind `petrus.operation:<net name>` in the net
-  instance's conversation; the `extension` of `createRuntime` holds this kind. Its one phase, `run`, calls the
+  instance's conversation; the `extension` of `createRuntime` holds this kind. Its phase `run` calls the
   handler with the operation's binding and id. Then one commit records the result, steps the net, and ends the
-  task as `completed`. This commit takes its time from the Harness's clock.
-- When the handler or the result's commit throws, the task reports the error to the host (`onReport`), sleeps
-  for `retryDelayMs`, and runs the phase again. The operation stays in flight.
+  task as `completed`. Its time comes from the Harness's clock. A handler can also return a
+  **delayed result**: see [delays.md](delays.md).
+- When a phase throws, the task reports the error (`onReport`), sleeps for `retryDelayMs`, and runs the phase
+  again. The operation stays in flight.
 - No task runs until the host calls `harness.resume()`.
 
 ## 2 Guarantees
@@ -114,7 +115,7 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
 - A resource token keeps work exclusive only inside the net. If a process dies while its handler's work goes on,
   the next run of the operation can overlap it: two holders are inside at once. See section 5 of
   [examples/classics/README.md](../../../examples/classics/README.md).
-- A handler has no timeout. A wait inside a handler does not survive a crash: the run starts again.
+- A handler has no timeout. A wait inside a handler does not survive a crash; a delayed result does.
 - An aborted task leaves its operation in flight for ever, with its input tokens taken.
 - Durable parks a task that a crash cuts off `restartLimit` times in a row (default 5). Its operation stays in
   flight until the host calls `Harness.retryTask`.

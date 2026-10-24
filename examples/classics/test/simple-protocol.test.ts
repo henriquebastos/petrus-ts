@@ -4,7 +4,7 @@ import { definitionOrder, tokensAt } from "@petrus/petri-net";
 import type { Runtime } from "@petrus/runtime";
 import { createRuntime } from "@petrus/runtime";
 import { describe, expect, onTestFinished, test } from "vitest";
-import type { Network, Timer } from "../src/simple-protocol.ts";
+import type { Network } from "../src/simple-protocol.ts";
 import {
 	dataReceived,
 	initialMarking,
@@ -15,7 +15,6 @@ import {
 	simpleProtocolHandlers,
 } from "../src/simple-protocol.ts";
 import { clock, context, createDisk, runToEnd } from "./disk.ts";
-import { flush } from "./flush.ts";
 
 /** The data of the example in Jensen, Kristensen and Wells (2007), section 2. */
 const paperData = ["COL", "OUR", "ED ", "PET", "RI ", "NET"];
@@ -36,13 +35,16 @@ function fakeNetwork(losses: readonly boolean[], pause: () => Promise<void>): Fa
 	};
 }
 
-function runtimeOf(network: Network, timer: Timer): Runtime {
+/** How long the timer of a sent packet waits. */
+const waitMs = 10;
+
+function runtimeOf(network: Network): Runtime {
 	return createRuntime({
 		name: "simple-protocol",
 		net: simpleProtocol,
 		policy: definitionOrder,
 		clock,
-		handlers: simpleProtocolHandlers(network, timer),
+		handlers: simpleProtocolHandlers(network, waitMs),
 		retryDelayMs: 0,
 	});
 }
@@ -82,39 +84,29 @@ const now = (): Promise<void> => Promise.resolve();
 describe("simple protocol", () => {
 	test("delivers the data of the paper once and in order", async () => {
 		const disk = createDisk();
-		await runToEnd(disk, runtimeOf(fakeNetwork([], now), { wait: now }), initialMarking(paperData), undefined);
+		await runToEnd(disk, runtimeOf(fakeNetwork([], now)), initialMarking(paperData), undefined);
 		expect(only(disk.last(), dataReceived)).toBe("COLOURED PETRI NET");
 		expect(done(disk.last(), paperData)).toBe(true);
 	});
 
-	test("holds a sent packet until its timer runs out, and then sends it again if the network lost it", async () => {
+	test("sends a lost packet again when the wait of its timer ends, and not before", async () => {
 		const disk = createDisk();
 		const network = fakeNetwork([true], now);
-		const timers: (() => void)[] = [];
-		const timer: Timer = {
-			wait: () =>
-				new Promise<void>((resolve) => {
-					timers.push(resolve);
-				}),
-		};
-		const process = await disk.open(runtimeOf(network, timer));
+		const process = await disk.open(runtimeOf(network));
 		onTestFinished(() => process.close());
+		const start = clock.now();
 		await process.instance.enqueue({ requestId: "first", tokens: initialMarking(["COL"]) }, context);
-		const settled = process.settle();
-		await flush();
-		expect(network.transmitted()).toStrictEqual([[1, "COL"]]);
-		expect(only(disk.last(), dataReceived)).toBe("");
-		timers.shift()?.();
-		await flush();
+		await process.settle();
 		expect(network.transmitted()).toStrictEqual([[1, "COL"], [1, "COL"], 2]);
-		expect(only(disk.last(), dataReceived)).toBe("COL");
-		expect(timers).toHaveLength(1);
-		timers.shift()?.();
-		await settled;
+		const { log } = await process.instance.state(context);
+		const sends = log.flatMap((entry) =>
+			entry.kind === "occurrence" && entry.transition === "SendPacket" ? [entry.at - start] : [],
+		);
+		expect(sends).toStrictEqual([0, waitMs]);
 		expect(done(disk.last(), ["COL"])).toBe(true);
 	});
 
-	test("the receiver gets the data once and in order, under any losses, any order of messages and timers, and a crash at any commit", async () => {
+	test("the receiver gets the data once and in order, under any losses, any order of messages and timer ends, and a crash at any commit", async () => {
 		await fc.assert(
 			fc.asyncProperty(
 				fc.scheduler(),
@@ -123,10 +115,9 @@ describe("simple protocol", () => {
 				fc.option(fc.nat({ max: 100 }), { nil: undefined }),
 				async (scheduler, packets, losses, crashAt) => {
 					const data = paperData.slice(0, packets);
-					const disk = createDisk();
+					const disk = createDisk(() => scheduler.schedule(Promise.resolve(), "clock"));
 					const network = fakeNetwork(losses, () => scheduler.schedule(Promise.resolve(), "network"));
-					const timer: Timer = { wait: () => scheduler.schedule(Promise.resolve(), "timer") };
-					await runToEnd(disk, runtimeOf(network, timer), initialMarking(data), crashAt, (settling) =>
+					await runToEnd(disk, runtimeOf(network), initialMarking(data), crashAt, (settling) =>
 						scheduler.waitFor(settling),
 					);
 					return disk.history().every((state) => receivedInOrder(state, data)) && done(disk.last(), data);

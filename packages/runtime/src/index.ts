@@ -1,5 +1,13 @@
 export type { Batch, Ingress, LogEntry, NetInstanceState, Occurrence } from "./net-instance.ts";
-export type { Handler, HandlerContext, HandlerResult, HandlerTransition, ResultArc, Variant } from "./handlers.ts";
+export type {
+	DelayedResult,
+	Handler,
+	HandlerContext,
+	HandlerResult,
+	HandlerTransition,
+	ResultArc,
+	Variant,
+} from "./handlers.ts";
 export { busyPlaceId, resultPlaceId, withHandlers } from "./handlers.ts";
 export type { Committed } from "./net-instance-commit.ts";
 export type { Operation } from "./operations.ts";

@@ -9,8 +9,16 @@ import type { Ingress, NetInstanceState, Occurrence } from "./net-instance.ts";
 import type { Operation } from "./operations.ts";
 import { operationsStartedFrom } from "./operations.ts";
 
-/** Starts the work of one operation in the commit that started it: a Durable task in the instance's conversation. */
-export type StartOperation = (tx: Tx, conversationId: ConversationId, operation: Operation) => Promise<unknown>;
+/**
+ * Starts the work of one operation in the commit that started it: a Durable task in the instance's conversation.
+ * `startedAt` is the time of that commit, which its occurrences share.
+ */
+export type StartOperation = (
+	tx: Tx,
+	conversationId: ConversationId,
+	operation: Operation,
+	startedAt: number,
+) => Promise<unknown>;
 
 /** What a commit of a net instance needs: the net's name, the plain net, its policy and handler transitions. */
 export type NetInstanceParts = {
@@ -70,7 +78,7 @@ export async function commitToNetInstance(
 	}
 	writeNetInstance(draft, parts.name, state, planned.state);
 	for (const operation of planned.started) {
-		await parts.start(tx, conversationId, operation);
+		await parts.start(tx, conversationId, operation, at);
 	}
 	return { ingress: planned.ingress, fired: planned.fired };
 }

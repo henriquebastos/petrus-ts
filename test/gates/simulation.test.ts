@@ -2,6 +2,10 @@ import fc from "fast-check";
 import { expect, test } from "vitest";
 import { crashProperty, raceProperty } from "../../packages/runtime/test/properties.ts";
 import { handlerFaultProperty } from "../../packages/runtime/test/handler-properties.ts";
+import { delayFaultProperty } from "../../packages/runtime/test/delay-properties.ts";
+import { createEarlyDueRuntime } from "../../fixtures/simulation/early-due-runtime.ts";
+import { createLostDueRuntime } from "../../fixtures/simulation/lost-due-runtime.ts";
+import { createFromRunRuntime } from "../../fixtures/simulation/from-run-runtime.ts";
 import { createEarlyStartRuntime } from "../../fixtures/simulation/early-start-runtime.ts";
 import { createForgetfulRuntime } from "../../fixtures/simulation/forgetful-runtime.ts";
 import { createIdBlindRuntime } from "../../fixtures/simulation/id-blind-runtime.ts";
@@ -72,6 +76,30 @@ test("the fault property finds the runtime that records a result under a request
 
 test("the outage finds the runtime whose handler task ends faulted when its handler throws", async () => {
 	const result = await fc.check(handlerFaultProperty(createUncaughtThrowRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("the delay property finds the runtime that records a delayed result at once", async () => {
+	const result = await fc.check(delayFaultProperty(createEarlyDueRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("the delay property finds the runtime whose due phase ends the task without the result", async () => {
+	const result = await fc.check(delayFaultProperty(createLostDueRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("an outage after a crash finds the runtime that counts a delay from the handler's run", async () => {
+	const result = await fc.check(delayFaultProperty(createFromRunRuntime));
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
 		reason: propertyVerdict,
