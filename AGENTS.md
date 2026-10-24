@@ -15,7 +15,9 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 - A behaviour change comes with a test that fails without it. Prefer a fast-check property when a rule holds for all inputs.
 - Run `pnpm format` to format. Do not format by hand.
 - A change to a package's public API fails `lint:api`. If the change is intended, run `pnpm lint:api --update` and commit the report diff in `packages/*/api/`.
-- Run `pnpm inspect` when a change feels done (CRAP and duplication on changed files). Run `pnpm periodic` (mutation testing) after a change to `petri-net` or `runtime` logic, and read the surviving mutants.
+- The pre-commit hook runs `pnpm feedback`, and the pre-push hook runs `pnpm inspect` (CRAP and duplication on the pushed
+  commits) and `pnpm periodic` (mutation testing, break score 100). Do not skip them with `--no-verify`.
+  Run `pnpm periodic` yourself after a change to `petri-net` or `runtime` logic, and read the surviving mutants.
 
 ## Docs
 

@@ -1,0 +1,2 @@
+# The fast gates, about 15 seconds. `git commit --no-verify` skips them; review must then see `pnpm feedback` pass.
+pnpm feedback

@@ -11,7 +11,7 @@ const mutant = Type.Object({
 });
 const mutationReport = Type.Object({ files: Type.Record(Type.String(), Type.Object({ mutants: Type.Array(mutant) })) });
 
-test("Stryker reports the untested boundary Survived, the untested function NoCoverage, and kills a petri-net mutant from a runtime test", async () => {
+test("Stryker reports the untested boundary Survived, the untested function NoCoverage, kills a petri-net mutant from a runtime test, and fails below the break score of 100", async () => {
 	const root = sandbox({
 		"stryker.config.json": "stryker.config.json",
 		"vitest.config.ts": "vitest.config.ts",
@@ -29,7 +29,8 @@ test("Stryker reports the untested boundary Survived, the untested function NoCo
 		"packages/runtime/test/half.test.ts": "fixtures/mutation/alias/half.test.ts",
 	});
 	const run = await runTool("stryker", ["run", "--reporters", "json"], root);
-	expect(run.exitCode, run.stdout + run.stderr).toBe(0);
+	expect(run.exitCode, run.stdout + run.stderr).toBe(1);
+	expect(run.stdout + run.stderr).toContain("under breaking threshold");
 	const report = readJson(join(root, "reports", "mutation", "mutation.json"), mutationReport);
 	const outcomes = ["packages/petri-net/src/guard.ts", "packages/petri-net/src/half.ts"]
 		.flatMap((file) =>

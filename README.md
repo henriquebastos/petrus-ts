@@ -25,11 +25,11 @@ Requirements: Node 26.8.2 (`.node-version`) and pnpm 11.5.2.
 
 ```sh
 pnpm install
-pnpm feedback      # every gate; run before each commit (about 15 seconds)
+pnpm feedback      # every gate; the pre-commit hook runs it (about 15 seconds)
 pnpm test          # unit and property tests with coverage
 pnpm test:gates    # planted defects: each gate must still fail on its fixture
-pnpm inspect       # when a change feels done: tests, then Fallow CRAP and clones on the changed files
-pnpm periodic      # on demand: Stryker mutation testing, report in reports/mutation/
+pnpm inspect       # tests, then Fallow CRAP and clones on the changed files; the pre-push hook runs it
+pnpm periodic      # Stryker mutation testing, report in reports/mutation/; the pre-push hook runs it
 pnpm format        # format code with Biome and fix Markdown with markdownlint
 ```
 
@@ -42,8 +42,11 @@ merge-base with `main`, uncommitted files included. It fails when the change bri
 and when duplication exceeds 0.1% of the code. knip and dependency-cruiser cover dead code and architecture,
 so the audit skips those parts.
 
-`pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src` with no score gate.
-It is a diagnostic: read the surviving mutants.
+`pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src`. It fails below a
+mutation score of 100: each surviving mutant needs a test, or a reasoned Stryker disable comment when it is equivalent.
+
+`pnpm install` installs the Husky hooks in `.husky/`. `pre-commit` runs `pnpm feedback`. `pre-push` runs
+`pnpm inspect` on the commits the push sends, then `pnpm periodic`.
 
 ## TypeScript versions
 
