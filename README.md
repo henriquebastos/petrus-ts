@@ -6,8 +6,8 @@ in the same commit. The Python Petrus is a separate implementation; nothing is p
 
 ## Status
 
-Walking skeleton. `petri-net` has the firing rule; `runtime` runs steps over a test store, with the seams
-(clock, store, serial steps) that a real store will use. Every quality gate has a planted defect in `fixtures/`
+Walking skeleton. `petri-net` has the firing rule; `runtime` runs steps and handlers over a test store, with the
+seams (clock, store, serial steps) that a real store will use. Handlers run in the runtime's process. Every quality gate has a planted defect in `fixtures/`
 and a test in `test/gates/` that shows the gate still fails on it.
 
 ## Packages
@@ -15,7 +15,7 @@ and a test in `test/gates/` that shows the gate still fails on it.
 | Package             | Role                                                         | May import  | Docs                                                                            |
 | ------------------- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
 | `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.        | nothing     | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
-| `@petrus/runtime`   | One net instance over a store: enqueues, steps, crashes.     | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
+| `@petrus/runtime`   | One net instance over a store: enqueues, steps, handlers.    | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
 `examples/comment-replies` is a host app on these packages: GitHub webhook deliveries in, request ids, a file
 store. See its [README](examples/comment-replies/README.md). An example imports packages only through their root,

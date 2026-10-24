@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, SelectionPolicy, Transition } from "@petrus/petri-net";
-import { addTokens, definitionOrder, fire, fireStep, placeId, transitionId } from "@petrus/petri-net";
+import { definitionOrder, fireStep, placeId, transitionId } from "@petrus/petri-net";
 import type {
 	Batch,
 	Ingress,
@@ -11,7 +11,8 @@ import type {
 	RuntimeOptions,
 	Stepped,
 } from "../src/index.ts";
-import { CommitFailed, createDisk, ReplyLost, StoreCrashed } from "./controlled-store.ts";
+import { CommitFailed, createDisk, ReplyLost, scheduledStore, StoreCrashed } from "./controlled-store.ts";
+import { replay, sameMarking, withAdded } from "./replay.ts";
 
 /** Any function with the shape of `createRuntime`. Gate fixtures pass broken runtimes here. */
 export type RuntimeFactory = (options: RuntimeOptions) => Runtime;
@@ -55,33 +56,9 @@ function batch(requestId: string, tokens: readonly string[]): Batch {
 	return { requestId, tokens: { [ready.id]: tokens } };
 }
 
-/** The marking with every token of `tokens` added, place by place. */
-function withAdded(marking: Marking, tokens: Marking): Marking {
-	return Object.entries(tokens).reduce((sum, [place, more]) => addTokens(sum, placeId(place), more), marking);
-}
-
-/** Replays the log one entry at a time. A consistent state gives back its own marking. */
-function replay(log: readonly LogEntry[]): Marking | undefined {
-	return log.reduce<Marking | undefined>(
-		(marking, entry) => (marking === undefined ? undefined : replayEntry(marking, entry)),
-		initialState.marking,
-	);
-}
-
-function replayEntry(marking: Marking, entry: LogEntry): Marking | undefined {
-	if (entry.kind === "ingress") {
-		return withAdded(marking, entry.tokens);
-	}
-	const transition = contested.transitions.find((candidate) => candidate.id === entry.transition);
-	const fired = transition === undefined ? undefined : fire(transition, entry.binding, marking);
-	return fired?.ok === true ? fired.value : undefined;
-}
-
-/** Equal markings: the same places with the same token lists. The order of places in the object does not count. */
-function sameMarking(left: Marking | undefined, right: Marking): boolean {
-	const sorted = (marking: Marking): string =>
-		JSON.stringify(Object.entries(marking).sort(([a], [b]) => a.localeCompare(b)));
-	return left !== undefined && sorted(left) === sorted(right);
+/** Replays the log on the contested net from the initial marking. */
+function replayed(log: readonly LogEntry[]): Marking | undefined {
+	return replay(contested, initialState.marking, log);
 }
 
 /** The log without times, so a model that has no clock can give it. */
@@ -130,7 +107,7 @@ export function crashCutProperty(factory: RuntimeFactory): fc.IAsyncProperty<[nu
 		}
 		const stored = disk.stored();
 		const steps = Array.from({ length: count }, (): Action => "step");
-		return sameMarking(replay(stored.log), stored.marking) && untimed(stored.log) === modelLog(steps, policy);
+		return sameMarking(replayed(stored.log), stored.marking) && untimed(stored.log) === modelLog(steps, policy);
 	});
 }
 
@@ -187,7 +164,7 @@ export function retryProperty(
 			const stored = disk.stored();
 			const recorded = stored.log.filter((entry) => entry.kind === "ingress");
 			return (
-				sameMarking(replay(stored.log), stored.marking) &&
+				sameMarking(replayed(stored.log), stored.marking) &&
 				untimed(stored.log) === modelLog(host.landed, policy) &&
 				JSON.stringify(host.acknowledged) === JSON.stringify(recorded)
 			);
@@ -235,17 +212,6 @@ function unlessStoreFault(error: unknown): void {
 	if (!(error instanceof ReplyLost || error instanceof CommitFailed)) {
 		throw error;
 	}
-}
-
-/**
- * A store whose reads and writes take effect only when the scheduler releases them, as with a real database.
- * (`scheduler.scheduleFunction` would run the call at once and delay only its answer, so writes would land early.)
- */
-function scheduledStore(scheduler: fc.Scheduler, raw: NetInstanceStore): NetInstanceStore {
-	return {
-		load: () => scheduler.schedule(Promise.resolve(), "load").then(raw.load),
-		commit: (state) => scheduler.schedule(Promise.resolve(), "commit").then(() => raw.commit(state)),
-	};
 }
 
 /** Two request ids, each always with the same tokens, so sending one twice is a duplicate delivery. */
@@ -316,7 +282,7 @@ function raceHolds(
 ): boolean {
 	const recorded = stored.log.filter((entry) => entry.kind === "ingress").map((entry) => JSON.stringify(entry));
 	return (
-		sameMarking(replay(stored.log), stored.marking) &&
+		sameMarking(replayed(stored.log), stored.marking) &&
 		untimedSet(stepped.flatMap((result) => result.fired)) ===
 			untimedSet(stored.log.filter((entry) => entry.kind === "occurrence")) &&
 		ingresses.every((ingress) => recorded.includes(JSON.stringify(ingress))) &&

@@ -17,6 +17,9 @@ export type BindingElement = {
 };
 
 // @public
+export function bindingProblems(transition: Transition, binding: Binding): readonly string[];
+
+// @public
 export type ColourSet = {
     readonly name: string;
     readonly contains: (token: Token) => boolean;

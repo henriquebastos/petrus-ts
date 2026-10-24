@@ -4,10 +4,17 @@
 
 ```ts
 
+import type { Binding } from '@petrus/petri-net';
 import type { BindingElement } from '@petrus/petri-net';
+import type { ColourSet } from '@petrus/petri-net';
 import type { Marking } from '@petrus/petri-net';
 import type { Net } from '@petrus/petri-net';
+import type { Place } from '@petrus/petri-net';
+import type { PlaceId } from '@petrus/petri-net';
 import type { SelectionPolicy } from '@petrus/petri-net';
+import type { Token } from '@petrus/petri-net';
+import type { Transition } from '@petrus/petri-net';
+import type { TransitionId } from '@petrus/petri-net';
 
 // @public
 export type Batch = {
@@ -16,12 +23,37 @@ export type Batch = {
 };
 
 // @public
+export function busyPlaceId(transition: TransitionId): PlaceId;
+
+// @public
 export type Clock = {
     readonly now: () => number;
 };
 
 // @public
 export function createRuntime(options: RuntimeOptions): Runtime;
+
+// @public
+export type Handler<V extends string = string> = {
+    readonly transition: HandlerTransition<V>;
+    readonly run: (binding: Binding<V>, context: HandlerContext) => Promise<HandlerResult>;
+};
+
+// @public
+export type HandlerContext = {
+    readonly operationId: string;
+};
+
+// @public
+export type HandlerResult = {
+    readonly variant: string;
+    readonly value: Token;
+};
+
+// @public
+export type HandlerTransition<V extends string = string> = Omit<Transition<V>, "outputs"> & {
+    readonly variants: Readonly<Record<string, Variant<V>>>;
+};
 
 // @public
 export type Ingress = Batch & {
@@ -51,9 +83,28 @@ export type Occurrence = BindingElement & {
 };
 
 // @public
+export type Operation = {
+    readonly id: string;
+    readonly transition: TransitionId;
+    readonly binding: Binding;
+};
+
+// @public
+export type ResultArc<V extends string = string> = {
+    readonly place: Place;
+    readonly expression: (binding: Binding<V>, value: Token) => readonly Token[];
+};
+
+// @public
+export function resultPlaceId(transition: TransitionId): PlaceId;
+
+// @public
 export type Runtime = {
     readonly step: () => Promise<Stepped>;
     readonly enqueue: (batch: Batch) => Promise<Ingress>;
+    readonly inFlight: () => Promise<readonly Operation[]>;
+    readonly complete: (operationId: string, result: HandlerResult) => Promise<Ingress>;
+    readonly settle: () => Promise<readonly Occurrence[]>;
 };
 
 // @public
@@ -62,6 +113,7 @@ export type RuntimeOptions = {
     readonly store: NetInstanceStore;
     readonly policy: SelectionPolicy;
     readonly clock: Clock;
+    readonly handlers?: readonly Handler[];
 };
 
 // @public
@@ -69,6 +121,15 @@ export type Stepped = {
     readonly fired: readonly Occurrence[];
     readonly state: NetInstanceState;
 };
+
+// @public
+export type Variant<V extends string = string> = {
+    readonly value: ColourSet;
+    readonly outputs: readonly ResultArc<V>[];
+};
+
+// @public
+export function withHandlers(net: Net, transitions: readonly HandlerTransition[]): Net;
 
 // (No @packageDocumentation comment for this package)
 

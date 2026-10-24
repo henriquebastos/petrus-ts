@@ -29,6 +29,8 @@ The core rule:
   enqueue. They take the state and a time. `advance` returns the next state; `admit` returns the next state, or the
   recorded ingress when the log holds the request id. The runtime adds only the effects: load, commit, and one call
   at a time.
+- A **handler transition** starts work outside the net, and its result comes back as tokens. See
+  [handlers.md](handlers.md) for handlers, operations, `complete` and `settle`.
 
 ## 2 Guarantees
 
@@ -99,7 +101,7 @@ call rejects. Only a store failure can leave a commit behind.
 
 ## 4 Limits
 
-- An enqueue does not step. The host calls `step` until it fires nothing.
+- An enqueue does not step. The host calls `step` until it fires nothing, or `settle`.
 - The store contract assumes that `commit` settles only when the write has landed or never will, and that one
   runtime at a time uses a store. A store with client timeouts, or two runtimes over one store, needs a
   conditional commit, which does not exist yet.

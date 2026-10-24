@@ -1,6 +1,12 @@
 import fc from "fast-check";
 import { expect, test } from "vitest";
 import { crashCutProperty, raceProperty, retryProperty } from "../../packages/runtime/test/properties.ts";
+import { handlerFaultProperty, handlerRaceProperty } from "../../packages/runtime/test/handler-properties.ts";
+import { createEarlyStartRuntime } from "../../fixtures/simulation/early-start-runtime.ts";
+import { createForgetfulSettleRuntime } from "../../fixtures/simulation/forgetful-settle-runtime.ts";
+import { createPerCallSettleRuntime } from "../../fixtures/simulation/per-call-settle-runtime.ts";
+import { createStickyFailureRuntime } from "../../fixtures/simulation/sticky-failure-runtime.ts";
+import { createTimedResultRuntime } from "../../fixtures/simulation/timed-result-runtime.ts";
 import { createEarlyReleaseRuntime } from "../../fixtures/simulation/early-release-runtime.ts";
 import { createForgetfulRuntime } from "../../fixtures/simulation/forgetful-runtime.ts";
 import { createIdBlindRuntime } from "../../fixtures/simulation/id-blind-runtime.ts";
@@ -62,6 +68,46 @@ test("the scheduler finds the runtime whose enqueue does not wait for the steps"
 
 test("a failed commit or a retry on a new runtime finds the runtime that keeps request ids in memory", async () => {
 	const result = await fc.check(retryProperty(createMemoryIdsRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("a crash with work in flight finds the runtime whose settle forgets the operations it did not start", async () => {
+	const result = await fc.check(handlerFaultProperty(createForgetfulSettleRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("the fault property finds the runtime that runs a handler before the step that starts it is stored", async () => {
+	const result = await fc.check(handlerFaultProperty(createEarlyStartRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("the scheduler finds the runtime whose concurrent settles run one operation twice", async () => {
+	const result = await fc.check(handlerRaceProperty(createPerCallSettleRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("the fault property finds the runtime that records a result under a request id that is not the operation's", async () => {
+	const result = await fc.check(handlerFaultProperty(createTimedResultRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("the outage finds the runtime that never runs an operation again after its handler threw", async () => {
+	const result = await fc.check(handlerFaultProperty(createStickyFailureRuntime));
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
 		reason: propertyVerdict,

@@ -19,5 +19,10 @@ The request id names the fact (here a comment), not the delivery that brought it
 the same comment are one batch. See section 2 of
 [examples/comment-replies/README.md](../../examples/comment-replies/README.md).
 
+A handler transition starts work outside the net, such as a call to a service. `settle` runs each handler,
+records its result under the operation's id, and steps until the net is quiet; after a crash it runs the work in
+flight again, and each result counts once.
+
 - [docs/spec.md](docs/spec.md): terms, guarantees, failures and limits, each with the test that proves it.
+- [docs/handlers.md](docs/handlers.md): handler transitions, operations and `settle`, with the same structure.
 - [api/runtime.api.md](api/runtime.api.md): the public signatures. `pnpm lint:api` keeps it current.

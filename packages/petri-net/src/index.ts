@@ -1,3 +1,4 @@
+export { bindingProblems } from "./binding.ts";
 export type { NotABinding, NotEnabled, Shortfall } from "./fire.ts";
 export { enabledBindings, fire } from "./fire.ts";
 export type { PlaceId, TransitionId } from "./ids.ts";

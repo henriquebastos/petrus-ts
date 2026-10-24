@@ -16,10 +16,7 @@ export type Admitted =
  * The order of places does not count; the order of tokens on a place does.
  */
 export function admit(net: Net, state: NetInstanceState, batch: Batch, at: number): Admitted {
-	const problems = markingProblems(net, batch.tokens);
-	if (problems.length > 0) {
-		throw new Error(`invalid batch ${batch.requestId}: ${problems.join("; ")}`);
-	}
+	checkBatch(net, batch);
 	const recorded = recordedIngress(state.log, batch.requestId);
 	if (recorded === undefined) {
 		const ingress: Ingress = { kind: "ingress", requestId: batch.requestId, tokens: batch.tokens, at };
@@ -35,7 +32,16 @@ export function admit(net: Net, state: NetInstanceState, batch: Batch, at: numbe
 	return { kind: "repeated", ingress: recorded };
 }
 
-function recordedIngress(log: readonly LogEntry[], requestId: string): Ingress | undefined {
+/** Throws when the batch does not fit the net (see `markingProblems`), and names every problem. */
+export function checkBatch(net: Net, batch: Batch): void {
+	const problems = markingProblems(net, batch.tokens);
+	if (problems.length > 0) {
+		throw new Error(`invalid batch ${batch.requestId}: ${problems.join("; ")}`);
+	}
+}
+
+/** The ingress that the log holds under `requestId`, if any. */
+export function recordedIngress(log: readonly LogEntry[], requestId: string): Ingress | undefined {
 	return log.find((entry): entry is Ingress => entry.kind === "ingress" && entry.requestId === requestId);
 }
 
