@@ -17,6 +17,7 @@ import {
 } from "../src/dining-philosophers.ts";
 import type { HistoryDisk } from "./disk.ts";
 import { Crashed, historyDisk } from "./disk.ts";
+import { flush } from "./flush.ts";
 
 const eating = busyPlaceId(transitionId("eat"));
 
@@ -101,13 +102,6 @@ function diners(marking: Marking): readonly Token[] {
 	return tokensAt(marking, eating).map((binding) => bound(binding, "philosopher"));
 }
 
-/** Lets the runtime finish its commits and start the next meals. It needs about 60 turns; 200 leaves room. */
-async function flush(): Promise<void> {
-	for (let turn = 0; turn < 200; turn += 1) {
-		await Promise.resolve();
-	}
-}
-
 describe("dining philosophers", () => {
 	test("lets philosophers who are not neighbours eat in the same step, and gives every fork back", async () => {
 		const meals = ["p0", "p1", "p2", "p3", "p4"];
@@ -132,7 +126,7 @@ describe("dining philosophers", () => {
 			fc.asyncProperty(
 				fc.scheduler(),
 				table,
-				fc.option(fc.nat({ max: 16 }), { nil: undefined }),
+				fc.option(fc.nat({ max: 20 }), { nil: undefined }),
 				async (scheduler, { size, seats }, dieAt) => {
 					const meals = seats.map((index) => `p${String(index)}`);
 					const disk = historyDisk({ marking: initialMarking(size, meals), log: [] });
