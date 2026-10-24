@@ -1,13 +1,13 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
 import { readJson, repoRoot } from "./tools.ts";
 
-const manifest = z.object({
-	name: z.string(),
-	dependencies: z.record(z.string(), z.string()).optional(),
-	devDependencies: z.record(z.string(), z.string()).optional(),
+const manifest = Type.Object({
+	name: Type.String(),
+	dependencies: Type.Optional(Type.Record(Type.String(), Type.String())),
+	devDependencies: Type.Optional(Type.Record(Type.String(), Type.String())),
 });
 
 /** An exact version, a workspace link, or an npm alias of an exact version. */

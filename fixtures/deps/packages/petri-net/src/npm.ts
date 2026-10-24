@@ -1,4 +1,4 @@
 // Planted defect: petri-net imports an npm package.
-import { z } from "zod";
+import { Type } from "typebox";
 
-export const schema = z.string();
+export const schema = Type.String();

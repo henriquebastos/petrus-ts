@@ -75,7 +75,7 @@ export default tseslint.config(
 				"error",
 				{ assertionStyle: "as", objectLiteralTypeAssertions: "never" },
 			],
-			// `JSON.parse(body) as T` and `as unknown as T` lie to the checker. Parse untrusted input with Zod.
+			// `JSON.parse(body) as T` and `as unknown as T` lie to the checker. Parse untrusted input with a TypeBox schema (`parseJson` in scripts/json.ts).
 			// A brand constructor is the one accepted exception, with a reasoned suppression.
 			"@typescript-eslint/no-unsafe-type-assertion": "error",
 			// `if (timeoutMs)` is false for 0, so numbers must be compared. Strings and nullable objects may be tested for truth.

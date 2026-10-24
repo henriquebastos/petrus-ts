@@ -2,7 +2,8 @@ import { execFile, execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { z } from "zod";
+import type { Static, TSchema } from "typebox";
+import { parseJson } from "../../scripts/json.ts";
 
 export const repoRoot = join(import.meta.dirname, "..", "..");
 
@@ -80,6 +81,6 @@ export function commitBaseline(root: string): void {
 }
 
 /** Reads a JSON file and checks its shape. Parsed input is untrusted until a schema accepts it. */
-export function readJson<TSchema extends z.ZodType>(path: string, schema: TSchema): z.infer<TSchema> {
-	return schema.parse(JSON.parse(readFileSync(path, "utf8")));
+export function readJson<TShape extends TSchema>(path: string, schema: TShape): Static<TShape> {
+	return parseJson(readFileSync(path, "utf8"), schema);
 }

@@ -1,16 +1,17 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
+import { parseJson } from "../../scripts/json.ts";
 import { readJson, repoRoot, runTool } from "./tools.ts";
 
-const names = z.array(z.object({ name: z.string() }));
-const knipReport = z.object({
-	issues: z.array(z.object({ exports: names, dependencies: names, unlisted: names })),
+const names = Type.Array(Type.Object({ name: Type.String() }));
+const knipReport = Type.Object({
+	issues: Type.Array(Type.Object({ exports: names, dependencies: names, unlisted: names })),
 });
-const expectedIssues = z.object({
-	exports: z.array(z.string()),
-	dependencies: z.array(z.string()),
-	unlisted: z.array(z.string()),
+const expectedIssues = Type.Object({
+	exports: Type.Array(Type.String()),
+	dependencies: Type.Array(Type.String()),
+	unlisted: Type.Array(Type.String()),
 });
 
 test("knip reports the planted unused export, unused dependency and unlisted import", async () => {
@@ -20,7 +21,7 @@ test("knip reports the planted unused export, unused dependency and unlisted imp
 		["--config", "../../knip.json", "--reporter", "json", "--no-config-hints"],
 		fixture,
 	);
-	const { issues } = knipReport.parse(JSON.parse(run.stdout));
+	const { issues } = parseJson(run.stdout, knipReport);
 	expect(run.exitCode).not.toBe(0);
 	expect({
 		exports: issues.flatMap((issue) => issue.exports.map((entry) => entry.name)),

@@ -1,15 +1,15 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
 import { readJson, repoRoot, runTool, sandbox } from "./tools.ts";
 
-const mutant = z.object({
-	mutatorName: z.string(),
-	replacement: z.string(),
-	status: z.string(),
-	location: z.object({ start: z.object({ line: z.number() }) }),
+const mutant = Type.Object({
+	mutatorName: Type.String(),
+	replacement: Type.String(),
+	status: Type.String(),
+	location: Type.Object({ start: Type.Object({ line: Type.Number() }) }),
 });
-const mutationReport = z.object({ files: z.record(z.string(), z.object({ mutants: z.array(mutant) })) });
+const mutationReport = Type.Object({ files: Type.Record(Type.String(), Type.Object({ mutants: Type.Array(mutant) })) });
 
 test("Stryker reports the untested boundary Survived, the untested function NoCoverage, and kills a petri-net mutant from a runtime test", async () => {
 	const root = sandbox({
@@ -40,6 +40,6 @@ test("Stryker reports the untested boundary Survived, the untested function NoCo
 		)
 		.sort();
 	expect(outcomes).toStrictEqual(
-		readJson(join(repoRoot, "fixtures", "mutation", "expected.json"), z.array(z.string())),
+		readJson(join(repoRoot, "fixtures", "mutation", "expected.json"), Type.Array(Type.String())),
 	);
 });

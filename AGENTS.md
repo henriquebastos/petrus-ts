@@ -36,7 +36,8 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
   `Math.random`, so tests and simulations control them.
 - Import another package only through its root (`@petrus/petri-net`), and only from a lower layer.
 - Every `eslint-disable` and `@ts-expect-error` has a reason on the same line, after `--`.
-- Parse untrusted input with a Zod schema. Do not cast it with `as`.
+- Parse untrusted input with a TypeBox schema, the schema library Pi uses. `scripts/json.ts` has `parseJson`.
+  Do not cast it with `as`, and do not add a second schema library.
 - Tests pass typed fakes in; do not use `vi.mock`.
 - Commit messages say why. Do not push or rewrite history without approval.
 

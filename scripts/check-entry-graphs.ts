@@ -7,7 +7,8 @@
  */
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { z } from "zod";
+import { Type } from "typebox";
+import { parseJson } from "./json.ts";
 
 type Budget = { readonly maxFiles: number; readonly forbid: readonly RegExp[] };
 
@@ -20,11 +21,11 @@ const budgets: Readonly<Record<string, Budget>> = {
 	"packages/runtime/src/index.ts": { maxFiles: 9, forbid: [/^node:/] },
 };
 
-const cruiseOutput = z.object({
-	modules: z.array(
-		z.object({
-			source: z.string(),
-			dependencies: z.array(z.object({ resolved: z.string(), dependencyTypes: z.array(z.string()) })),
+const cruiseOutput = Type.Object({
+	modules: Type.Array(
+		Type.Object({
+			source: Type.String(),
+			dependencies: Type.Array(Type.Object({ resolved: Type.String(), dependencyTypes: Type.Array(Type.String()) })),
 		}),
 	),
 });
@@ -39,7 +40,7 @@ function valueGraph(): Graph {
 		encoding: "utf8",
 		maxBuffer: 32 * 1024 * 1024,
 	});
-	const { modules } = cruiseOutput.parse(JSON.parse(run.stdout));
+	const { modules } = parseJson(run.stdout, cruiseOutput);
 	return new Map(
 		modules.map((module) => [
 			module.source,

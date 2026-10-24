@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
 import { readJson, repoRoot } from "./tools.ts";
 
 /** One command vocabulary, no aliases. A rename must change this list on purpose. */
@@ -22,6 +22,9 @@ const scriptNames = [
 ];
 
 test("package.json has exactly the agreed script names", () => {
-	const manifest = readJson(join(repoRoot, "package.json"), z.object({ scripts: z.record(z.string(), z.string()) }));
+	const manifest = readJson(
+		join(repoRoot, "package.json"),
+		Type.Object({ scripts: Type.Record(Type.String(), Type.String()) }),
+	);
 	expect(Object.keys(manifest.scripts).sort()).toStrictEqual(scriptNames);
 });

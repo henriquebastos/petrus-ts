@@ -2,28 +2,29 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { z } from "zod";
+import { Type } from "typebox";
+import { parseJson } from "../../scripts/json.ts";
 import { commitBaseline, plant, repoRoot, runTool, sandbox } from "./tools.ts";
 
-const complexityFinding = z.object({
-	path: z.string(),
-	name: z.string(),
-	cyclomatic: z.number(),
-	crap: z.number().optional(),
-	coverage_source: z.string().optional(),
-	exceeded: z.string(),
+const complexityFinding = Type.Object({
+	path: Type.String(),
+	name: Type.String(),
+	cyclomatic: Type.Number(),
+	crap: Type.Optional(Type.Number()),
+	coverage_source: Type.Optional(Type.String()),
+	exceeded: Type.String(),
 });
-const cloneGroup = z.object({
-	line_count: z.number(),
-	instances: z.array(z.object({ file: z.string() })),
+const cloneGroup = Type.Object({
+	line_count: Type.Number(),
+	instances: Type.Array(Type.Object({ file: Type.String() })),
 });
-const auditReport = z.object({
-	verdict: z.string(),
-	complexity: z.object({ findings: z.array(complexityFinding) }).optional(),
-	duplication: z.object({ clone_groups: z.array(cloneGroup) }).optional(),
+const auditReport = Type.Object({
+	verdict: Type.String(),
+	complexity: Type.Optional(Type.Object({ findings: Type.Array(complexityFinding) })),
+	duplication: Type.Optional(Type.Object({ clone_groups: Type.Array(cloneGroup) })),
 });
-const healthReport = z.object({ findings: z.array(complexityFinding) });
-const dupesReport = z.object({ clone_groups: z.array(cloneGroup) });
+const healthReport = Type.Object({ findings: Type.Array(complexityFinding) });
+const dupesReport = Type.Object({ clone_groups: Type.Array(cloneGroup) });
 
 /** The real config and the real packages, committed, so the planted file is the only change `fallow audit` sees. */
 function committedPackages(): string {
@@ -45,7 +46,7 @@ describe("Fallow audit, the inspect gate for CRAP and duplication on changed cod
 		plant(root, { "packages/petri-net/src/retry-delay.ts": "fixtures/crap/retry-delay.ts" });
 		await runTool("vitest", ["run", "--coverage"], root);
 		const run = await runTool("fallow", ["audit", "--format", "json", "--quiet"], root);
-		const report = auditReport.parse(JSON.parse(run.stdout));
+		const report = parseJson(run.stdout, auditReport);
 		expect(run.exitCode).toBe(1);
 		expect(report.verdict).toBe("fail");
 		expect(report.complexity?.findings).toStrictEqual([
@@ -67,7 +68,7 @@ describe("Fallow audit, the inspect gate for CRAP and duplication on changed cod
 			"packages/hamsterdan-github/src/summary.ts": "fixtures/dupes/summary.ts",
 		});
 		const run = await runTool("fallow", ["audit", "--only", "dupes", "--format", "json", "--quiet"], root);
-		const report = auditReport.parse(JSON.parse(run.stdout));
+		const report = parseJson(run.stdout, auditReport);
 		expect(run.exitCode).toBe(1);
 		expect(report.verdict).toBe("fail");
 		expect(
@@ -96,15 +97,13 @@ test("the real code has no function at CRAP 30 or above and no clone group", asy
 	const dupes = await runTool("fallow", ["dupes", "--format", "json", "--quiet"], repoRoot);
 	expect({
 		exitCode: health.exitCode,
-		findings: healthReport.parse(JSON.parse(health.stdout)).findings,
+		findings: parseJson(health.stdout, healthReport).findings,
 	}).toStrictEqual({
 		exitCode: 0,
 		findings: [],
 	});
-	expect({ exitCode: dupes.exitCode, groups: dupesReport.parse(JSON.parse(dupes.stdout)).clone_groups }).toStrictEqual(
-		{
-			exitCode: 0,
-			groups: [],
-		},
-	);
+	expect({ exitCode: dupes.exitCode, groups: parseJson(dupes.stdout, dupesReport).clone_groups }).toStrictEqual({
+		exitCode: 0,
+		groups: [],
+	});
 });

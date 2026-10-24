@@ -1,26 +1,28 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import type { Static } from "typebox";
+import { Type } from "typebox";
+import { parseJson } from "../../scripts/json.ts";
 import { readJson, repoRoot, runTool } from "./tools.ts";
 
-const ruleOnFile = z.object({ rule: z.string(), from: z.string() });
+const ruleOnFile = Type.Object({ rule: Type.String(), from: Type.String() });
 
-const cruiseOutput = z.object({
-	summary: z.object({
-		totalCruised: z.number(),
-		violations: z.array(z.object({ from: z.string(), rule: z.object({ name: z.string() }) })),
+const cruiseOutput = Type.Object({
+	summary: Type.Object({
+		totalCruised: Type.Number(),
+		violations: Type.Array(Type.Object({ from: Type.String(), rule: Type.Object({ name: Type.String() }) })),
 	}),
 });
 
-async function cruise(cwd: string, config: string): Promise<z.infer<typeof cruiseOutput>> {
+async function cruise(cwd: string, config: string): Promise<Static<typeof cruiseOutput>> {
 	const run = await runTool("depcruise", ["packages", "--config", config, "--output-type", "json"], cwd);
-	return cruiseOutput.parse(JSON.parse(run.stdout));
+	return parseJson(run.stdout, cruiseOutput);
 }
 
 test("dependency-cruiser reports each planted violation by rule name", async () => {
 	const fixture = join(repoRoot, "fixtures", "deps");
 	const output = await cruise(fixture, "../../.dependency-cruiser.cjs");
-	const expected = readJson(join(fixture, "expected.json"), z.array(ruleOnFile));
+	const expected = readJson(join(fixture, "expected.json"), Type.Array(ruleOnFile));
 	const reported = output.summary.violations.map((violation) => ({ rule: violation.rule.name, from: violation.from }));
 	expect(new Set(reported.map((entry) => JSON.stringify(entry)))).toStrictEqual(
 		new Set(expected.map((entry) => JSON.stringify(entry))),
