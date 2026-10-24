@@ -1,11 +1,11 @@
 // Planted defect: the marking and the occurrence log land in two commits, so a crash between them splits them.
 import type { Result, TransitionId } from "../../packages/petri-net/src/index.ts";
 import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
-import type { InstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
+import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
 
 export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {
 	let tail: Promise<unknown> = Promise.resolve();
-	const stepNow = async (id: TransitionId): Promise<Result<InstanceState, StepFailure>> => {
+	const stepNow = async (id: TransitionId): Promise<Result<NetInstanceState, StepFailure>> => {
 		const transition = options.transitions.find((candidate) => candidate.id === id);
 		if (transition === undefined) {
 			return err({ kind: "unknown-transition", transition: id });

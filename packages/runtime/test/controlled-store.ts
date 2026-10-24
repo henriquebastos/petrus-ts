@@ -1,4 +1,4 @@
-import type { InstanceState, InstanceStore } from "../src/index.ts";
+import type { NetInstanceState, NetInstanceStore } from "../src/index.ts";
 
 /** Thrown by a store whose process "died" at a commit. The commit did not land. */
 export class StoreCrashed extends Error {
@@ -7,11 +7,11 @@ export class StoreCrashed extends Error {
 
 /** What survives a crash. Each `open` is a new process that reads the same disk. */
 export type Disk = {
-	readonly stored: () => InstanceState;
-	readonly open: (options?: { readonly crashAtCommit?: number }) => InstanceStore;
+	readonly stored: () => NetInstanceState;
+	readonly open: (options?: { readonly crashAtCommit?: number }) => NetInstanceStore;
 };
 
-export function createDisk(initial: InstanceState): Disk {
+export function createDisk(initial: NetInstanceState): Disk {
 	let stored = initial;
 	return {
 		stored: () => stored,

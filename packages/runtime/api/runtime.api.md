@@ -19,15 +19,15 @@ export type Clock = {
 export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
-export type InstanceState = {
+export type NetInstanceState = {
     readonly marking: Marking;
     readonly occurrences: readonly Occurrence[];
 };
 
 // @public
-export type InstanceStore = {
-    readonly load: () => Promise<InstanceState>;
-    readonly commit: (state: InstanceState) => Promise<void>;
+export type NetInstanceStore = {
+    readonly load: () => Promise<NetInstanceState>;
+    readonly commit: (state: NetInstanceState) => Promise<void>;
 };
 
 // @public
@@ -38,13 +38,13 @@ export type Occurrence = {
 
 // @public
 export type Runtime = {
-    readonly step: (transition: TransitionId) => Promise<Result<InstanceState, StepFailure>>;
+    readonly step: (transition: TransitionId) => Promise<Result<NetInstanceState, StepFailure>>;
 };
 
 // @public
 export type RuntimeOptions = {
     readonly transitions: readonly Transition[];
-    readonly store: InstanceStore;
+    readonly store: NetInstanceStore;
     readonly clock: Clock;
 };
 

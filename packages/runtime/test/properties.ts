@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import type { Marking, Transition, TransitionId } from "@petrus/petri-net";
 import { fire, placeId, transitionId } from "@petrus/petri-net";
-import type { InstanceState, InstanceStore, Runtime, RuntimeOptions } from "../src/index.ts";
+import type { NetInstanceState, NetInstanceStore, Runtime, RuntimeOptions } from "../src/index.ts";
 import { createDisk, StoreCrashed } from "./controlled-store.ts";
 
 /** Any function with the shape of `createRuntime`. Gate fixtures pass broken runtimes here. */
@@ -18,20 +18,20 @@ export const contested: readonly Transition[] = [
 	{ id: transitionId("give-back"), inputs: [{ place: left, weight: 1 }], outputs: [{ place: ready, weight: 1 }] },
 ];
 
-export const initialState: InstanceState = { marking: { [ready]: 1 }, occurrences: [] };
+export const initialState: NetInstanceState = { marking: { [ready]: 1 }, occurrences: [] };
 
 const stepArbitrary: fc.Arbitrary<TransitionId> = fc.constantFrom(...contested.map((transition) => transition.id));
 
 const fixedClock = { now: (): number => 1_000 };
 
 /** Replays the occurrence log from the initial marking. A consistent state gives back its own marking. */
-function replay(occurrences: InstanceState["occurrences"]): Marking | undefined {
+function replay(occurrences: NetInstanceState["occurrences"]): Marking | undefined {
 	return occurrences.reduce<Marking | undefined>(replayOne, initialState.marking);
 }
 
 function replayOne(
 	marking: Marking | undefined,
-	occurrence: InstanceState["occurrences"][number],
+	occurrence: NetInstanceState["occurrences"][number],
 ): Marking | undefined {
 	const transition = contested.find((candidate) => candidate.id === occurrence.transition);
 	if (marking === undefined || transition === undefined) {
@@ -92,7 +92,7 @@ export function crashCutProperty(factory: RuntimeFactory): fc.IAsyncProperty<[re
  * A store whose reads and writes take effect only when the scheduler releases them, as with a real database.
  * (`scheduler.scheduleFunction` would run the call at once and delay only its answer, so writes would land early.)
  */
-function scheduledStore(scheduler: fc.Scheduler, raw: InstanceStore): InstanceStore {
+function scheduledStore(scheduler: fc.Scheduler, raw: NetInstanceStore): NetInstanceStore {
 	return {
 		load: () => scheduler.schedule(Promise.resolve(), "load").then(raw.load),
 		commit: (state) => scheduler.schedule(Promise.resolve(), "commit").then(() => raw.commit(state)),

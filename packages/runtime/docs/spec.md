@@ -2,14 +2,14 @@
 
 The core rule:
 
-> A step loads the instance, fires one transition, and commits the new marking with its occurrence in one atomic commit.
+> A step loads the net instance, fires one transition, and commits the new marking with its occurrence in one atomic commit.
 > The steps of one runtime run one at a time. A step is acknowledged only after its commit lands.
 
 ## 1 Terms
 
-- An **instance** is one run of a net. Its **state** is a marking and an occurrence log.
+- A **net instance** is one run of a net. Its **state** is a marking and an occurrence log.
 - An **occurrence** records one committed firing: the transition and the time from the clock.
-- A **store** keeps the state of one instance. `load` returns the last committed state.
+- A **store** keeps the state of one net instance. `load` returns the last committed state.
   `commit` is atomic: after a crash the store holds the old state or the new state, never a part of each.
 - A **step** fires one transition by id.
 - The **clock** is the only source of time. The runtime takes it as an option.

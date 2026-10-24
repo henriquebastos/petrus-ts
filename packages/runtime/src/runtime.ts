@@ -1,6 +1,6 @@
 import type { NotEnabled, Result, Transition, TransitionId } from "@petrus/petri-net";
 import { err, fire, netProblems, ok } from "@petrus/petri-net";
-import type { InstanceState, InstanceStore } from "./instance.ts";
+import type { NetInstanceState, NetInstanceStore } from "./net-instance.ts";
 import type { Clock } from "./seams.ts";
 import { createSerialQueue } from "./serial-queue.ts";
 
@@ -13,17 +13,17 @@ export type StepFailure = NotEnabled | UnknownTransition;
 /** One running net instance. */
 export type Runtime = {
 	/** Fires one transition and commits the new marking and its occurrence together. Steps run one at a time. */
-	readonly step: (transition: TransitionId) => Promise<Result<InstanceState, StepFailure>>;
+	readonly step: (transition: TransitionId) => Promise<Result<NetInstanceState, StepFailure>>;
 };
 
-/** What a runtime needs: the net, the store of its instance, and the clock that stamps occurrences. */
+/** What a runtime needs: the net, the store of its net instance, and the clock that stamps occurrences. */
 export type RuntimeOptions = {
 	readonly transitions: readonly Transition[];
-	readonly store: InstanceStore;
+	readonly store: NetInstanceStore;
 	readonly clock: Clock;
 };
 
-/** Builds a runtime for one instance. A net with problems (see `netProblems`) is a bug, so it throws. */
+/** Builds a runtime for one net instance. A net with problems (see `netProblems`) is a bug, so it throws. */
 export function createRuntime(options: RuntimeOptions): Runtime {
 	const { transitions, store, clock } = options;
 	const problems = netProblems(transitions);
@@ -33,7 +33,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 	const byId = new Map(transitions.map((transition) => [transition.id, transition]));
 	const serial = createSerialQueue();
 
-	async function stepNow(id: TransitionId): Promise<Result<InstanceState, StepFailure>> {
+	async function stepNow(id: TransitionId): Promise<Result<NetInstanceState, StepFailure>> {
 		const transition = byId.get(id);
 		if (transition === undefined) {
 			return err({ kind: "unknown-transition", transition: id });
@@ -43,7 +43,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 		if (!fired.ok) {
 			return fired;
 		}
-		const next: InstanceState = {
+		const next: NetInstanceState = {
 			marking: fired.value,
 			occurrences: [...state.occurrences, { transition: id, at: clock.now() }],
 		};

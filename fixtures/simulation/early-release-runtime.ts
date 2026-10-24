@@ -1,10 +1,10 @@
 // Planted defect: the queue lets the next step run as soon as this step issued its commit, not when the commit landed.
 import type { Result, TransitionId } from "../../packages/petri-net/src/index.ts";
 import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
-import type { InstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
+import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
 import { createSerialQueue } from "../../packages/runtime/src/serial-queue.ts";
 
-type Prepared = Result<{ readonly next: InstanceState; readonly landed: Promise<void> }, StepFailure>;
+type Prepared = Result<{ readonly next: NetInstanceState; readonly landed: Promise<void> }, StepFailure>;
 
 export function createEarlyReleaseRuntime(options: RuntimeOptions): Runtime {
 	const serial = createSerialQueue();
@@ -27,7 +27,7 @@ export function createEarlyReleaseRuntime(options: RuntimeOptions): Runtime {
 	}
 
 	return {
-		step: async (id: TransitionId): Promise<Result<InstanceState, StepFailure>> => {
+		step: async (id: TransitionId): Promise<Result<NetInstanceState, StepFailure>> => {
 			const prepared = await serial(() => prepare(id));
 			if (!prepared.ok) {
 				return prepared;
