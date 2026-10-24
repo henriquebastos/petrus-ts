@@ -6,4 +6,5 @@ if [ -n "$remote_sha" ] && [ "$remote_sha" != "000000000000000000000000000000000
 	export FALLOW_AUDIT_BASE="$remote_sha"
 fi
 # A surviving mutant fails the push: add a test, or mark an equivalent mutant with a reasoned Stryker disable comment.
+for name in $(env | sed -n 's/^\(GIT_[A-Z_]*\)=.*/\1/p'); do unset "$name"; done
 pnpm inspect && pnpm periodic

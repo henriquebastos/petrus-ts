@@ -1,2 +1,5 @@
 # The fast gates, about 15 seconds. `git commit --no-verify` skips them; review must then see `pnpm feedback` pass.
+# git sets GIT_INDEX_FILE and other GIT_ variables for the hook. The gate tests run git in sandbox repositories,
+# which would then read this repository's index, so the hook removes them and runs as a terminal would.
+for name in $(env | sed -n 's/^\(GIT_[A-Z_]*\)=.*/\1/p'); do unset "$name"; done
 pnpm feedback
