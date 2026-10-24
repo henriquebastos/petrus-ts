@@ -128,8 +128,11 @@ function citationHolds(file: string, path: string, quote: string): boolean {
 	return readFileSync(target, "utf8").includes(quote);
 }
 
-/** Prose lines of one paragraph, joined by spaces, and the index of its first line. */
-type Paragraph = { readonly start: number; readonly text: string };
+/**
+ * Prose lines of one paragraph, joined by spaces. `start` is the index of its first line, and `offsets` holds where
+ * each line begins in `text`, so a problem names the line it is on.
+ */
+type Paragraph = { readonly start: number; readonly text: string; readonly offsets: readonly number[] };
 
 /**
  * A prose line that goes on the paragraph above it. Only a blank line ends a paragraph: markdownlint puts blank
@@ -140,28 +143,39 @@ function continuesParagraph(lines: readonly string[], index: number, inCode: boo
 	return !inCode && !blank(lines[index]) && !blank(lines[index - 1]);
 }
 
+/** A line as it goes on its paragraph: without its indent, and without its `>` in a block quote. */
+function continuation(line: string): string {
+	return line.trim().replace(/^>\s?/, "");
+}
+
 /** The paragraphs of a Markdown file. Each code line is a paragraph of its own, so code never joins prose. */
 function paragraphs(lines: readonly string[]): readonly Paragraph[] {
-	const found: { start: number; text: string }[] = [];
+	const found: { start: number; text: string; offsets: number[] }[] = [];
 	let inCode = false;
 	lines.forEach((line, index) => {
 		const last = found.at(-1);
 		if (last !== undefined && continuesParagraph(lines, index, inCode)) {
-			last.text = `${last.text} ${line.trim()}`;
+			last.offsets.push(last.text.length + 1);
+			last.text = `${last.text} ${continuation(line)}`;
 		} else {
-			found.push({ start: index, text: line });
+			found.push({ start: index, text: line, offsets: [0] });
 		}
 		inCode = line.trimStart().startsWith("```") ? !inCode : inCode;
 	});
 	return found;
 }
 
+/** The number, from 1, of the file line on which `position` of the paragraph's text lies. */
+function lineNumber({ start, offsets }: Paragraph, position: number): number {
+	return start + offsets.filter((offset) => offset <= position).length;
+}
+
 function citationProblems(file: string, lines: readonly string[]): readonly string[] {
-	return paragraphs(lines).flatMap(({ start, text }) =>
-		[...text.matchAll(/`([^`]+)` "([^"]+)"/g)].flatMap(([, path = "", quote = ""]) =>
+	return paragraphs(lines).flatMap((paragraph) =>
+		[...paragraph.text.matchAll(/`([^`]+)` "([^"]+)"/g)].flatMap(({ 1: path = "", 2: quote = "", index }) =>
 			citationHolds(file, path, quote)
 				? []
-				: [`${file}:${String(start + 1)} cites "${quote}", which ${path} does not contain`],
+				: [`${file}:${String(lineNumber(paragraph, index))} cites "${quote}", which ${path} does not contain`],
 		),
 	);
 }
