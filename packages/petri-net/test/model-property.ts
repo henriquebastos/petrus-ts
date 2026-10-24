@@ -34,6 +34,16 @@ function modelFire(model: Model, transition: Transition): void {
 	}
 }
 
+function assertSameCounts(model: Model, marking: Marking): void {
+	for (const place of places) {
+		const actual = ownCount(marking, place);
+		const expected = model.counts.get(place) ?? 0;
+		if (actual !== expected) {
+			throw new Error(`place ${place}: fire gave ${String(actual)}, the model gave ${String(expected)}`);
+		}
+	}
+}
+
 class FireCommand implements fc.Command<Model, Real> {
 	readonly #fire: Fire;
 	readonly transition: Transition;
@@ -58,13 +68,7 @@ class FireCommand implements fc.Command<Model, Real> {
 		}
 		modelFire(model, this.transition);
 		real.marking = fired.value;
-		for (const place of places) {
-			const actual = ownCount(real.marking, place);
-			const expected = model.counts.get(place) ?? 0;
-			if (actual !== expected) {
-				throw new Error(`place ${place}: fire gave ${String(actual)}, the model gave ${String(expected)}`);
-			}
-		}
+		assertSameCounts(model, real.marking);
 	}
 
 	toString(): string {

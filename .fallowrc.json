@@ -1,7 +1,15 @@
 {
 	"$schema": "./node_modules/fallow/schema.json",
 	"ignorePatterns": ["fixtures/**", "coverage/**"],
-	"health": { "maxCrap": 30, "coverage": "coverage/coverage-final.json" },
+	// CRAP needs measured coverage. Tests, scripts and root configs have none (scripts run in gate-test
+	// subprocesses), and Fallow's estimate would flag them, so CRAP checks only packages/*/src. ESLint's complexity
+	// limit covers them all. maxCrap 10 keeps the old rule (CRAP 30 at complexity 10) at the complexity limit of 5:
+	// a function at the limit fails below about 42% coverage.
+	"health": {
+		"maxCrap": 10,
+		"coverage": "coverage/coverage-final.json",
+		"ignore": ["**/test/**", "test/**", "scripts/**", "*.cjs", "*.js", "*.ts"]
+	},
 	"duplicates": { "threshold": 0.1 },
 	"audit": { "gate": "new-only", "deadCode": false }
 }

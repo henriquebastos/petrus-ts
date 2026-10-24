@@ -41,7 +41,7 @@ function committedPackages(): string {
 }
 
 describe("Fallow audit, the inspect gate for CRAP and duplication on changed code", () => {
-	test("fails on an uncovered function with cyclomatic complexity 8 (CRAP 72), read from Istanbul coverage", async () => {
+	test("fails on an uncovered function with cyclomatic complexity 3 (CRAP 12), which the lint limit of 5 allows", async () => {
 		const root = committedPackages();
 		plant(root, { "packages/petri-net/src/retry-delay.ts": "fixtures/crap/retry-delay.ts" });
 		await runTool("vitest", ["run", "--coverage"], root);
@@ -53,8 +53,8 @@ describe("Fallow audit, the inspect gate for CRAP and duplication on changed cod
 			{
 				path: "packages/petri-net/src/retry-delay.ts",
 				name: "retryDelay",
-				cyclomatic: 8,
-				crap: 72,
+				cyclomatic: 3,
+				crap: 12,
 				coverage_source: "istanbul",
 				exceeded: "crap",
 			},
@@ -85,7 +85,7 @@ describe("Fallow audit, the inspect gate for CRAP and duplication on changed cod
 	});
 });
 
-test("the real code has no function at CRAP 30 or above and no clone group", async () => {
+test("the real code has no function at CRAP 10 or above and no clone group", async () => {
 	const reports = mkdtempSync(join(tmpdir(), "petrus-coverage-"));
 	const coverage = await runTool("vitest", ["run", "--coverage", `--coverage.reportsDirectory=${reports}`], repoRoot);
 	expect(coverage.exitCode).toBe(0);

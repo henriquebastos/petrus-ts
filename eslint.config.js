@@ -56,7 +56,8 @@ export default tseslint.config(
 		languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
 		linterOptions: { reportUnusedDisableDirectives: "error" },
 		rules: {
-			complexity: ["error", 10],
+			// 5 keeps one question per function. Fallow's maxCrap (.fallowrc.json) is set from this limit; change both together.
+			complexity: ["error", 5],
 			"max-depth": ["error", 4],
 			"no-restricted-syntax": ["error", ...houseSyntax],
 			"no-restricted-imports": [

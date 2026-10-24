@@ -4,5 +4,6 @@
 	"linter": { "enabled": false },
 	"assist": { "enabled": false },
 	"formatter": { "enabled": true, "indentStyle": "tab", "indentWidth": 3, "lineWidth": 120 },
-	"files": { "includes": ["**", "!fixtures/**", "!**/*.md", "!pnpm-lock.yaml"] }
+	"files": { "includes": ["**", "!fixtures/**", "!**/*.md", "!pnpm-lock.yaml"] },
+	"overrides": [{ "includes": [".fallowrc.json"], "json": { "parser": { "allowComments": true } } }]
 }

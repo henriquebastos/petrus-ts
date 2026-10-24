@@ -7,9 +7,9 @@ import { Value } from "typebox/value";
  */
 export function parseJson<TShape extends TSchema>(text: string, schema: TShape): Static<TShape> {
 	const value = Value.Clean(schema, JSON.parse(text));
-	if (!Value.Check(schema, value)) {
-		const [first] = Value.Errors(schema, value);
-		throw new TypeError(`JSON does not match the schema at "${first?.instancePath ?? ""}": ${first?.message ?? ""}`);
+	if (Value.Check(schema, value)) {
+		return value;
 	}
-	return value;
+	const problems = Value.Errors(schema, value).map((error) => `"${error.instancePath}" ${error.message}`);
+	throw new TypeError(`JSON does not match the schema: ${problems.join("; ")}`);
 }

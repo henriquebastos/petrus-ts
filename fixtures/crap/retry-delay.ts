@@ -1,4 +1,6 @@
-// Planted defect: cyclomatic complexity 8 and no test, so CRAP = 8² × (1 − 0)³ + 8 = 72.
+// Planted defect: cyclomatic complexity 3 and no test, so CRAP = 3² × (1 − 0)³ + 3 = 12.
+// ESLint allows complexity 3, so only the CRAP limit of 10 catches it. At the old limit of 30 it would pass.
+// The limit of 10 keeps the old rule at the new complexity limit: a function at the limit (5) fails below about 42% coverage.
 export function retryDelay(attempt: number): number {
 	if (attempt <= 0) {
 		return 0;
@@ -6,20 +8,5 @@ export function retryDelay(attempt: number): number {
 	if (attempt === 1) {
 		return 100;
 	}
-	if (attempt === 2) {
-		return 250;
-	}
-	if (attempt === 3) {
-		return 500;
-	}
-	if (attempt === 4) {
-		return 1_000;
-	}
-	if (attempt === 5) {
-		return 2_000;
-	}
-	if (attempt === 6) {
-		return 4_000;
-	}
-	return 8_000;
+	return 250;
 }

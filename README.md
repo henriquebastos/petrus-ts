@@ -38,7 +38,7 @@ dependency-cruiser with the entry-graph budgets, the api-extractor reports, knip
 Vitest with coverage, and the gate tests.
 
 `pnpm inspect` runs the tests, then `fallow audit` (config in `.fallowrc.json`) on the files changed since the
-merge-base with `main`, uncommitted files included. It fails when the change brings a function to CRAP 30 or more,
+merge-base with `main`, uncommitted files included. It fails when the change brings a function in `packages/*/src` to CRAP 10 or more,
 and when duplication exceeds 0.1% of the code. knip and dependency-cruiser cover dead code and architecture,
 so the audit skips those parts.
 
