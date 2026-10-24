@@ -1,0 +1,102 @@
+import fc from "fast-check";
+import type { Marking, Token } from "@petrus/petri-net";
+import { definitionOrder, tokensAt } from "@petrus/petri-net";
+import type { Runtime } from "@petrus/runtime";
+import { busyPlaceId, createRuntime } from "@petrus/runtime";
+import { describe, expect, test } from "vitest";
+import type { Workshop } from "../src/producer-consumer.ts";
+import {
+	buffer,
+	consume,
+	free,
+	initialMarking,
+	orders,
+	produce,
+	producerConsumer,
+	producerConsumerHandlers,
+	used,
+} from "../src/producer-consumer.ts";
+import type { HistoryDisk } from "./disk.ts";
+import { Crashed, historyDisk } from "./disk.ts";
+
+/** A workshop that does each operation once and records it. `pause` is where its work waits. */
+function workshop(pause: () => Promise<void>): Workshop & { readonly uses: () => ReadonlyMap<string, Token> } {
+	const made = new Map<string, Token>();
+	const uses = new Map<string, Token>();
+	return {
+		make: async (order, operationId) => {
+			await pause();
+			const item = made.get(operationId) ?? (typeof order === "string" ? order.replace("order", "item") : order);
+			made.set(operationId, item);
+			return item;
+		},
+		use: async (item, operationId) => {
+			await pause();
+			uses.set(operationId, item);
+		},
+		uses: () => uses,
+	};
+}
+
+function runtimeOn(disk: HistoryDisk, shop: Workshop, dieAt?: number): Runtime {
+	return createRuntime({
+		net: producerConsumer,
+		store: disk.open(dieAt),
+		policy: definitionOrder,
+		clock: { now: () => 0 },
+		handlers: producerConsumerHandlers(shop),
+	});
+}
+
+/** The slots are conserved, and each order is in exactly one stage. */
+function invariantsHold(marking: Marking, orderCount: number, capacity: number): boolean {
+	const inProduction = tokensAt(marking, busyPlaceId(produce.id)).length;
+	const inUse = tokensAt(marking, busyPlaceId(consume.id)).length;
+	const stored = tokensAt(marking, buffer.id).length;
+	return (
+		tokensAt(marking, free.id).length + inProduction + stored + inUse === capacity &&
+		tokensAt(marking, orders.id).length + inProduction + stored + inUse + tokensAt(marking, used.id).length ===
+			orderCount
+	);
+}
+
+describe("producer and consumer", () => {
+	test("makes and uses every order once, and frees every slot", async () => {
+		const disk = historyDisk({ marking: initialMarking(3, 2), log: [] });
+		const shop = workshop(() => Promise.resolve());
+		await runtimeOn(disk, shop).settle();
+		expect(disk.last().marking).toStrictEqual({
+			[free.id]: ["slot", "slot"],
+			[used.id]: ["item 1", "item 2", "item 3"],
+		});
+		expect([...shop.uses().values()].sort()).toStrictEqual(["item 1", "item 2", "item 3"]);
+	});
+
+	test("keeps the buffer bounded and each order in one stage at every commit, under any order of work and a crash at any commit", async () => {
+		await fc.assert(
+			fc.asyncProperty(
+				fc.scheduler(),
+				fc.integer({ min: 1, max: 5 }),
+				fc.integer({ min: 1, max: 3 }),
+				fc.option(fc.nat({ max: 20 }), { nil: undefined }),
+				async (scheduler, orderCount, capacity, dieAt) => {
+					const disk = historyDisk({ marking: initialMarking(orderCount, capacity), log: [] });
+					const shop = workshop(() => scheduler.schedule(Promise.resolve(), "work"));
+					await scheduler.waitFor(runtimeOn(disk, shop, dieAt).settle()).catch((error: unknown) => {
+						if (!(error instanceof Crashed)) {
+							throw error;
+						}
+						return scheduler.waitFor(runtimeOn(disk, shop).settle());
+					});
+					const items = Array.from({ length: orderCount }, (_, index) => `item ${String(index + 1)}`);
+					return (
+						disk.history().every((state) => invariantsHold(state.marking, orderCount, capacity)) &&
+						tokensAt(disk.last().marking, free.id).length === capacity &&
+						JSON.stringify([...tokensAt(disk.last().marking, used.id)].sort()) === JSON.stringify(items) &&
+						JSON.stringify([...shop.uses().values()].sort()) === JSON.stringify(items)
+					);
+				},
+			),
+		);
+	});
+});

@@ -8,6 +8,7 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 | Enqueues, steps, stores, crashes, concurrency         | `packages/runtime/docs/spec.md`                                                              |
 | Handler transitions, operations, `settle`             | `packages/runtime/docs/handlers.md`                                                          |
 | A host app: request ids, the edge, a store, settling  | `examples/comment-replies/README.md`                                                         |
+| Classical nets with handlers and their invariants     | `examples/classics/README.md`                                                                |
 | Code style                                            | `docs/style-guide.md`                                                                        |
 | A lint, type, dependency or test gate                 | the config file and its comments, the gate test in `test/gates/`, its fixture in `fixtures/` |
 

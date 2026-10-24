@@ -18,8 +18,9 @@ and a test in `test/gates/` that shows the gate still fails on it.
 | `@petrus/runtime`   | One net instance over a store: enqueues, steps, handlers.    | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
 `examples/comment-replies` is a host app on these packages: GitHub webhook deliveries in, request ids, a file
-store. See its [README](examples/comment-replies/README.md). An example imports packages only through their root,
-and no package imports an example.
+store. See its [README](examples/comment-replies/README.md). `examples/classics` runs nets from the literature with
+handler transitions and checks each net's invariant at every commit. See its [README](examples/classics/README.md).
+An example imports packages only through their root, and no package imports an example.
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:
 `hamsterdan`, `hamsterdan-github` and `hamsterdan-cli`, in that order.

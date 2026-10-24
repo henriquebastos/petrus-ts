@@ -1,0 +1,10 @@
+{
+	"name": "@petrus/example-classics",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"dependencies": {
+		"@petrus/petri-net": "workspace:*",
+		"@petrus/runtime": "workspace:*"
+	}
+}

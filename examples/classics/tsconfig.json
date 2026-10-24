@@ -1,0 +1,6 @@
+{
+	"extends": "../../tsconfig.base.json",
+	// An app, not a library: it has no API report, so its exported nets may keep their inferred types.
+	"compilerOptions": { "types": [], "isolatedDeclarations": false },
+	"include": ["src/**/*.ts", "test/**/*.ts"]
+}
