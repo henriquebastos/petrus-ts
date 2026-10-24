@@ -1,11 +1,10 @@
 import type { Net, SelectionPolicy } from "@petrus/petri-net";
-import { fireStep, markingProblems, netProblems } from "@petrus/petri-net";
-import type { NetInstanceState, NetInstanceStore, Occurrence } from "./net-instance.ts";
+import { markingProblems, netProblems } from "@petrus/petri-net";
+import type { Stepped } from "./advance.ts";
+import { advance } from "./advance.ts";
+import type { NetInstanceState, NetInstanceStore } from "./net-instance.ts";
 import type { Clock } from "./seams.ts";
 import { createSerialQueue } from "./serial-queue.ts";
-
-/** What one step committed: its occurrences, in firing order, and the state after it. */
-export type Stepped = { readonly fired: readonly Occurrence[]; readonly state: NetInstanceState };
 
 /** One running net instance. */
 export type Runtime = {
@@ -50,15 +49,11 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 
 	async function stepNow(): Promise<Stepped> {
 		const state = await load();
-		const step = fireStep(net, state.marking, policy);
-		if (step.fired.length === 0) {
-			return { fired: [], state };
+		const stepped = advance(net, policy, state, clock.now());
+		if (stepped.state !== state) {
+			await store.commit(stepped.state);
 		}
-		const at = clock.now();
-		const fired = step.fired.map(({ transition, binding }) => ({ transition, binding, at }));
-		const next: NetInstanceState = { marking: step.marking, occurrences: [...state.occurrences, ...fired] };
-		await store.commit(next);
-		return { fired, state: next };
+		return stepped;
 	}
 
 	return { step: () => serial(stepNow) };

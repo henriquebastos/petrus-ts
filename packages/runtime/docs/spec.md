@@ -19,11 +19,16 @@ The core rule:
   the policy orders and filters the enabled binding elements, and allocation fires each one whose tokens are still
   free (Jensen's step). See the petri-net spec.
 - The **clock** is the only source of time. The runtime takes it as an option.
+- **`advance`** (in `src/advance.ts`) is the pure part of a step: it calls `fireStep`, stamps the occurrences with a
+  given time and appends them to the log. The runtime adds only the effects: load, commit, and one step at a time.
 
 ## 2 Guarantees
 
 Each guarantee names the test that proves it. Paths are relative to this package.
 
+- `advance` appends the step's occurrences, stamped with the given time, and returns the same state when nothing
+  fires. Tests: `test/advance.test.ts` "appends the step's occurrences to the log, each stamped with the given time",
+  "returns the same state when nothing fires, so the runtime commits nothing".
 - A step commits the marking and its occurrences together, and stamps the occurrences with the clock.
   Test: `test/runtime.test.ts` "commits the new marking and the step's occurrences together, stamped by the clock".
 - The policy decides which binding element gets a contested token.
