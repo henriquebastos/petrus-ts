@@ -5,5 +5,6 @@
 	"docs/outside.md:3 names a place outside the repository",
 	"docs/outside.md:5 names a place outside the repository",
 	"docs/too-long.md has 1508 words, limit 1500",
-	"packages/runtime/docs/wrong-citation.md:3 cites \"commits nothing ever, under any condition\", which test/runtime.test.ts does not contain"
+	"packages/runtime/docs/wrong-citation.md:3 cites \"commits nothing ever, under any condition\", which test/runtime.test.ts does not contain",
+	"packages/runtime/docs/wrong-citation.md:7 cites \"commits nothing when no token is ready\", which test/runtime.test.ts does not contain"
 ]

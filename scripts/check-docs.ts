@@ -3,7 +3,8 @@
  * - each Markdown file has at most `wordLimit` words;
  * - no text file names a place outside the repository (a home directory or the outside discussion notes);
  * - each repository path that a Markdown file names exists;
- * - each quoted text that a Markdown file cites from a file, written `path` "text", is in that file.
+ * - each quoted text that a Markdown file cites from a file, written `path` "text", is in that file. A citation
+ *   may wrap to the next line of its paragraph.
  * `fixtures/` (planted defects) and the generated API reports are not checked. Run from the repository root
  * (the gate test runs it from a sandbox copy).
  */
@@ -127,12 +128,40 @@ function citationHolds(file: string, path: string, quote: string): boolean {
 	return readFileSync(target, "utf8").includes(quote);
 }
 
+/** Prose lines of one paragraph, joined by spaces, and the index of its first line. */
+type Paragraph = { readonly start: number; readonly text: string };
+
+/**
+ * A prose line that goes on the paragraph above it. Only a blank line ends a paragraph: markdownlint puts blank
+ * lines round headings and code blocks.
+ */
+function continuesParagraph(lines: readonly string[], index: number, inCode: boolean): boolean {
+	const blank = (line: string | undefined): boolean => line === undefined || line.trim() === "";
+	return !inCode && !blank(lines[index]) && !blank(lines[index - 1]);
+}
+
+/** The paragraphs of a Markdown file. Each code line is a paragraph of its own, so code never joins prose. */
+function paragraphs(lines: readonly string[]): readonly Paragraph[] {
+	const found: { start: number; text: string }[] = [];
+	let inCode = false;
+	lines.forEach((line, index) => {
+		const last = found.at(-1);
+		if (last !== undefined && continuesParagraph(lines, index, inCode)) {
+			last.text = `${last.text} ${line.trim()}`;
+		} else {
+			found.push({ start: index, text: line });
+		}
+		inCode = line.trimStart().startsWith("```") ? !inCode : inCode;
+	});
+	return found;
+}
+
 function citationProblems(file: string, lines: readonly string[]): readonly string[] {
-	return lines.flatMap((line, index) =>
-		[...line.matchAll(/`([^`]+)` "([^"]+)"/g)].flatMap(([, path = "", quote = ""]) =>
+	return paragraphs(lines).flatMap(({ start, text }) =>
+		[...text.matchAll(/`([^`]+)` "([^"]+)"/g)].flatMap(([, path = "", quote = ""]) =>
 			citationHolds(file, path, quote)
 				? []
-				: [`${file}:${String(index + 1)} cites "${quote}", which ${path} does not contain`],
+				: [`${file}:${String(start + 1)} cites "${quote}", which ${path} does not contain`],
 		),
 	);
 }
