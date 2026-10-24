@@ -4,14 +4,28 @@ import type { BindingElement, Marking } from "@petrus/petri-net";
  * One binding element that the runtime committed, and when. The occurrences of one step share `at` and are in
  * firing order, so replaying them one by one with `fire` gives the step's tokens.
  */
-export type Occurrence = BindingElement & { readonly at: number };
+export type Occurrence = BindingElement & { readonly kind: "occurrence"; readonly at: number };
 
-/** The stored state of one net instance. The marking and the occurrence log change in the same commit. */
-export type NetInstanceState = { readonly marking: Marking; readonly occurrences: readonly Occurrence[] };
+/**
+ * Tokens that a host adds from outside, under the host's own id for them. A retry of the same input, or a second
+ * delivery of it, must use the same id.
+ */
+export type Batch = { readonly requestId: string; readonly tokens: Marking };
+
+/** A batch that the runtime applied, and when. */
+export type Ingress = Batch & { readonly kind: "ingress"; readonly at: number };
+
+/** The log records, in commit order, what changed the marking. Replaying it from the first marking gives the marking. */
+export type LogEntry = Occurrence | Ingress;
+
+/** The stored state of one net instance. The marking and the log change in the same commit. */
+export type NetInstanceState = { readonly marking: Marking; readonly log: readonly LogEntry[] };
 
 /**
  * Storage for one net instance. `commit` is atomic: after a crash the store holds the old state
- * or the new state, never a part of each.
+ * or the new state, never a part of each. `commit` settles only when the write has landed or never will, so a
+ * rejected commit that lands later is a bug in the store. One runtime at a time uses a store: the store does no
+ * compare-and-swap, so two runtimes would overwrite each other.
  */
 export type NetInstanceStore = {
 	readonly load: () => Promise<NetInstanceState>;

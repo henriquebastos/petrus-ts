@@ -11,3 +11,4 @@ export { err, ok } from "./result.ts";
 export type { BindingElement, FiredStep, SelectionPolicy } from "./step.ts";
 export { definitionOrder, enabledElements, fireStep } from "./step.ts";
 export type { Token } from "./token.ts";
+export { tokenKey } from "./token.ts";

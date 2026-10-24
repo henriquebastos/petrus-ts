@@ -1,7 +1,8 @@
 # Petrus TS
 
-Petrus runs Petri nets as durable programs. A step fires one transition and commits the new marking
-and its occurrence in the same commit. The Python Petrus is a separate implementation; nothing is ported from it.
+Petrus runs coloured Petri nets as durable programs. A host adds tokens from outside under a request id, and a
+step fires the binding elements that a selection policy picks and commits the new marking with their occurrences
+in the same commit. The Python Petrus is a separate implementation; nothing is ported from it.
 
 ## Status
 
@@ -14,7 +15,7 @@ and a test in `test/gates/` that shows the gate still fails on it.
 | Package             | Role                                                         | May import  | Docs                                                                            |
 | ------------------- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
 | `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.        | nothing     | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
-| `@petrus/runtime`   | Runs one net instance over a store: steps, commits, crashes. | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
+| `@petrus/runtime`   | One net instance over a store: enqueues, steps, crashes.     | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:
 `hamsterdan`, `hamsterdan-github` and `hamsterdan-cli`, in that order.

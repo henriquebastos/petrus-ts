@@ -33,7 +33,7 @@ export type Transition<V extends string = string> = {
 	readonly variables: Readonly<Record<V, ColourSet>>;
 	/**
 	 * The condition a binding must meet. A transition with no condition has `() => true`. The binding's values may
-	 * have another key order than the tokens on the place, so it compares tokens by value.
+	 * have another key order than the tokens on the place, so it compares tokens by value, for example with `tokenKey`.
 	 */
 	readonly guard: (binding: Binding<V>) => boolean;
 	readonly inputs: readonly InputArc<V>[];

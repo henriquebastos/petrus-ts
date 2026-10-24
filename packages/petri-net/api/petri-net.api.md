@@ -140,6 +140,9 @@ export type Token = null | boolean | number | string | readonly Token[] | {
 };
 
 // @public
+export function tokenKey(token: Token): string;
+
+// @public
 export function tokensAt(marking: Marking, place: PlaceId): readonly Token[];
 
 // @public

@@ -5,8 +5,17 @@ import { describe, expect, test } from "vitest";
 import type { RuntimeOptions } from "../src/index.ts";
 import { createRuntime } from "../src/index.ts";
 import type { Disk } from "./controlled-store.ts";
-import { createDisk } from "./controlled-store.ts";
-import { contested, crashCutProperty, initialState, left, move, raceProperty, ready } from "./properties.ts";
+import { createDisk, ReplyLost } from "./controlled-store.ts";
+import {
+	contested,
+	crashCutProperty,
+	initialState,
+	left,
+	move,
+	raceProperty,
+	ready,
+	retryProperty,
+} from "./properties.ts";
 
 const takeLeft = transitionId("take-left");
 const takeRight = transitionId("take-right");
@@ -22,12 +31,12 @@ describe("createRuntime, examples", () => {
 		const runtime = createRuntime(options(disk, { clock: { now: () => clock } }));
 		clock = 6_000;
 		const fired = [
-			{ transition: takeLeft, binding: { j: "j1" }, at: 6_000 },
-			{ transition: takeLeft, binding: { j: "j2" }, at: 6_000 },
+			{ kind: "occurrence", transition: takeLeft, binding: { j: "j1" }, at: 6_000 },
+			{ kind: "occurrence", transition: takeLeft, binding: { j: "j2" }, at: 6_000 },
 		];
 		const stepped = await runtime.step();
 		expect(stepped.fired).toStrictEqual(fired);
-		expect(disk.stored()).toStrictEqual({ marking: { [placeId("left")]: ["j1", "j2"] }, occurrences: fired });
+		expect(disk.stored()).toStrictEqual({ marking: { [placeId("left")]: ["j1", "j2"] }, log: fired });
 		expect(stepped.state).toStrictEqual(disk.stored());
 	});
 
@@ -40,7 +49,7 @@ describe("createRuntime, examples", () => {
 	});
 
 	test("fires nothing and commits nothing when nothing is enabled", async () => {
-		const idle = { marking: { [placeId("right")]: ["j1"] }, occurrences: [] };
+		const idle = { marking: { [placeId("right")]: ["j1"] }, log: [] };
 		let commits = 0;
 		const disk = createDisk(idle);
 		const store = disk.open();
@@ -66,12 +75,15 @@ describe("createRuntime, examples", () => {
 		);
 	});
 
-	test("rejects a step when the stored marking does not fit the net, which is a bug in the store", async () => {
-		const disk = createDisk({ marking: { [placeId("ready")]: ["j9"], [placeId("lost")]: ["j1"] }, occurrences: [] });
-		await expect(createRuntime(options(disk)).step()).rejects.toThrow(
-			new Error(
-				'invalid stored marking: marking: "j9" on ready is not in Job; marking: place lost is not in the net',
-			),
+	test("rejects a step and an enqueue when the stored marking does not fit the net, which is a bug in the store", async () => {
+		const disk = createDisk({ marking: { [placeId("ready")]: ["j9"], [placeId("lost")]: ["j1"] }, log: [] });
+		const runtime = createRuntime(options(disk));
+		const problems = new Error(
+			'invalid stored marking: marking: "j9" on ready is not in Job; marking: place lost is not in the net',
+		);
+		await expect(runtime.step()).rejects.toThrow(problems);
+		await expect(runtime.enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j1"] } })).rejects.toThrow(
+			problems,
 		);
 	});
 
@@ -95,6 +107,41 @@ describe("createRuntime, examples", () => {
 		expect(disk.stored()).toBe(initialState);
 	});
 
+	test("enqueues a batch: commits its tokens and its ingress together, stamped by the clock", async () => {
+		const disk = createDisk({ marking: {}, log: [] });
+		const runtime = createRuntime(options(disk, { clock: { now: () => 9 } }));
+		const ingress = await runtime.enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j2"] } });
+		expect(ingress).toStrictEqual({
+			kind: "ingress",
+			requestId: "delivery-1",
+			tokens: { [ready.id]: ["j2"] },
+			at: 9,
+		});
+		expect(disk.stored()).toStrictEqual({ marking: { [ready.id]: ["j2"] }, log: [ingress] });
+	});
+
+	test("a retry after a lost reply returns the recorded ingress and adds nothing", async () => {
+		const disk = createDisk(initialState);
+		let clock = 1;
+		const runtime = createRuntime(
+			options(disk, { store: disk.open({ loseReplyAtCommit: 0 }), clock: { now: () => clock } }),
+		);
+		const batch = { requestId: "delivery-1", tokens: { [ready.id]: ["j1"] } };
+		await expect(runtime.enqueue(batch)).rejects.toThrow(ReplyLost);
+		const landed = disk.stored();
+		clock = 2;
+		expect(await runtime.enqueue(batch)).toStrictEqual({ kind: "ingress", ...batch, at: 1 });
+		expect(disk.stored()).toBe(landed);
+	});
+
+	test("rejects a batch that does not fit the net, which is a bug in the host, and commits nothing", async () => {
+		const disk = createDisk(initialState);
+		await expect(
+			createRuntime(options(disk)).enqueue({ requestId: "delivery-1", tokens: { [ready.id]: ["j9"] } }),
+		).rejects.toThrow('invalid batch delivery-1: marking: "j9" on ready is not in Job');
+		expect(disk.stored()).toBe(initialState);
+	});
+
 	test("a failed commit does not block the next step", async () => {
 		const disk = createDisk(initialState);
 		const runtime = createRuntime(options(disk, { store: disk.open({ crashAtCommit: 0 }) }));
@@ -109,7 +156,11 @@ describe("createRuntime, simulation", () => {
 		await fc.assert(crashCutProperty(createRuntime));
 	});
 
-	test("loses no acknowledged step under any interleaving", async () => {
+	test("loses no acknowledged step or batch under any interleaving", async () => {
 		await fc.assert(raceProperty(createRuntime));
+	});
+
+	test("adds each batch once when a commit fails or its reply is lost and the host retries with the same request id", async () => {
+		await fc.assert(retryProperty(createRuntime));
 	});
 });

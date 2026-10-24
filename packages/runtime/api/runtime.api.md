@@ -10,6 +10,12 @@ import type { Net } from '@petrus/petri-net';
 import type { SelectionPolicy } from '@petrus/petri-net';
 
 // @public
+export type Batch = {
+    readonly requestId: string;
+    readonly tokens: Marking;
+};
+
+// @public
 export type Clock = {
     readonly now: () => number;
 };
@@ -18,9 +24,18 @@ export type Clock = {
 export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
+export type Ingress = Batch & {
+    readonly kind: "ingress";
+    readonly at: number;
+};
+
+// @public
+export type LogEntry = Occurrence | Ingress;
+
+// @public
 export type NetInstanceState = {
     readonly marking: Marking;
-    readonly occurrences: readonly Occurrence[];
+    readonly log: readonly LogEntry[];
 };
 
 // @public
@@ -31,12 +46,14 @@ export type NetInstanceStore = {
 
 // @public
 export type Occurrence = BindingElement & {
+    readonly kind: "occurrence";
     readonly at: number;
 };
 
 // @public
 export type Runtime = {
     readonly step: () => Promise<Stepped>;
+    readonly enqueue: (batch: Batch) => Promise<Ingress>;
 };
 
 // @public

@@ -14,6 +14,11 @@ export function advance(net: Net, policy: SelectionPolicy, state: NetInstanceSta
 	if (step.fired.length === 0) {
 		return { fired: [], state };
 	}
-	const fired = step.fired.map(({ transition, binding }) => ({ transition, binding, at }));
-	return { fired, state: { marking: step.marking, occurrences: [...state.occurrences, ...fired] } };
+	const fired = step.fired.map(({ transition, binding }) => ({
+		kind: "occurrence" as const,
+		transition,
+		binding,
+		at,
+	}));
+	return { fired, state: { marking: step.marking, log: [...state.log, ...fired] } };
 }

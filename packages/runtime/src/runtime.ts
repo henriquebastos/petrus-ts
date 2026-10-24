@@ -1,8 +1,9 @@
 import type { Net, SelectionPolicy } from "@petrus/petri-net";
 import { markingProblems, netProblems } from "@petrus/petri-net";
+import { admit } from "./admit.ts";
 import type { Stepped } from "./advance.ts";
 import { advance } from "./advance.ts";
-import type { NetInstanceState, NetInstanceStore } from "./net-instance.ts";
+import type { Batch, Ingress, NetInstanceState, NetInstanceStore } from "./net-instance.ts";
 import type { Clock } from "./seams.ts";
 import { createSerialQueue } from "./serial-queue.ts";
 
@@ -13,6 +14,12 @@ export type Runtime = {
 	 * When nothing is enabled it fires nothing and commits nothing. Steps run one at a time.
 	 */
 	readonly step: () => Promise<Stepped>;
+	/**
+	 * Adds a batch of tokens from outside and records its ingress in the same commit. A batch whose request id the
+	 * log already holds adds nothing and returns the recorded ingress, so a retry after a lost reply is safe.
+	 * It does not step: the host calls `step`.
+	 */
+	readonly enqueue: (batch: Batch) => Promise<Ingress>;
 };
 
 /**
@@ -56,5 +63,13 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 		return stepped;
 	}
 
-	return { step: () => serial(stepNow) };
+	async function enqueueNow(batch: Batch): Promise<Ingress> {
+		const admitted = admit(net, await load(), batch, clock.now());
+		if (admitted.kind === "applied") {
+			await store.commit(admitted.state);
+		}
+		return admitted.ingress;
+	}
+
+	return { step: () => serial(stepNow), enqueue: (batch) => serial(() => enqueueNow(batch)) };
 }

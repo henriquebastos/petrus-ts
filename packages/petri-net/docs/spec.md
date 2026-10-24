@@ -19,7 +19,7 @@ definition 4.2. It keeps their words. The core rule:
   A variable listed twice takes two equal tokens. Two arcs from the same place add up.
 - An **output arc** has an **arc expression**: a function from the binding to the tokens the arc gives.
   A guard and an arc expression get the binding's values, whose key order may differ from the tokens on the place,
-  so they compare tokens by value.
+  so they compare tokens by value, for example with `tokenKey`.
 - A **binding** gives each variable of one transition a value of its colour set, and the guard is true for it.
   A transition and a binding form a **binding element**.
 - A **marking** is the multiset of tokens on each place, kept in the order the tokens arrived.

@@ -1,4 +1,4 @@
-export type { NetInstanceState, NetInstanceStore, Occurrence } from "./net-instance.ts";
+export type { Batch, Ingress, LogEntry, NetInstanceState, NetInstanceStore, Occurrence } from "./net-instance.ts";
 export type { Stepped } from "./advance.ts";
 export type { Runtime, RuntimeOptions } from "./runtime.ts";
 export { createRuntime } from "./runtime.ts";
