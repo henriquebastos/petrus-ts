@@ -1,5 +1,5 @@
 // Planted defect: the queue lets the next step run as soon as this step issued its commit, not when the commit landed.
-import type { Result, TransitionId } from "../../packages/petri-net/src/index.ts";
+import type { Binding, Result, TransitionId } from "../../packages/petri-net/src/index.ts";
 import { err, fire, ok } from "../../packages/petri-net/src/index.ts";
 import type { NetInstanceState, Runtime, RuntimeOptions, StepFailure } from "../../packages/runtime/src/index.ts";
 import { createSerialQueue } from "../../packages/runtime/src/serial-queue.ts";
@@ -9,26 +9,26 @@ type Prepared = Result<{ readonly next: NetInstanceState; readonly landed: Promi
 export function createEarlyReleaseRuntime(options: RuntimeOptions): Runtime {
 	const serial = createSerialQueue();
 
-	async function prepare(id: TransitionId): Promise<Prepared> {
-		const transition = options.transitions.find((candidate) => candidate.id === id);
+	async function prepare(id: TransitionId, binding: Binding): Promise<Prepared> {
+		const transition = options.net.transitions.find((candidate) => candidate.id === id);
 		if (transition === undefined) {
 			return err({ kind: "unknown-transition", transition: id });
 		}
 		const state = await options.store.load();
-		const fired = fire(transition, state.marking);
+		const fired = fire(transition, binding, state.marking);
 		if (!fired.ok) {
 			return fired;
 		}
 		const next = {
 			marking: fired.value,
-			occurrences: [...state.occurrences, { transition: id, at: options.clock.now() }],
+			occurrences: [...state.occurrences, { transition: id, binding, at: options.clock.now() }],
 		};
 		return ok({ next, landed: options.store.commit(next) });
 	}
 
 	return {
-		step: async (id: TransitionId): Promise<Result<NetInstanceState, StepFailure>> => {
-			const prepared = await serial(() => prepare(id));
+		step: async (id: TransitionId, binding: Binding): Promise<Result<NetInstanceState, StepFailure>> => {
+			const prepared = await serial(() => prepare(id, binding));
 			if (!prepared.ok) {
 				return prepared;
 			}

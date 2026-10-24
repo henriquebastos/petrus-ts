@@ -1,87 +1,205 @@
 import { fc, test } from "@fast-check/vitest";
-import { describe, expect } from "vitest";
-import type { Transition } from "../src/index.ts";
-import { fire, isEnabled, placeId, shortfalls, tokensAt, transitionId } from "../src/index.ts";
-import { markingArbitrary, totalTokens, totalWeight, transitionArbitrary } from "./arbitraries.ts";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { describe, expect, vi } from "vitest";
+import type { ColourSet, Place, Transition } from "../src/index.ts";
+import { enabledBindings, fire, placeId, transitionId } from "../src/index.ts";
+import { canonical, countTokens, firingArbitrary } from "./arbitraries.ts";
 
-const inbox = placeId("inbox");
-const done = placeId("done");
-const review: Transition = {
-	id: transitionId("review"),
-	inputs: [{ place: inbox, weight: 2 }],
-	outputs: [{ place: done, weight: 1 }],
+const commentSchema = Type.Object({ author: Type.String(), pr: Type.String() });
+const comment: ColourSet = { name: "Comment", contains: (token) => Value.Check(commentSchema, token) };
+const pr: ColourSet = { name: "Pr", contains: (token) => Value.Check(Type.String(), token) };
+
+const comments: Place = { id: placeId("comments"), colourSet: comment };
+const resource: Place = { id: placeId("resource"), colourSet: pr };
+const replies: Place = { id: placeId("replies"), colourSet: comment };
+
+/** Answers a comment while it holds the resource token of the comment's pull request, then gives the token back. */
+const answer: Transition<"c" | "r"> = {
+	id: transitionId("answer"),
+	variables: { c: comment, r: pr },
+	guard: ({ c, r }) => Value.Check(commentSchema, c) && c.pr === r,
+	inputs: [
+		{ place: comments, variables: ["c"] },
+		{ place: resource, variables: ["r"] },
+	],
+	outputs: [
+		{ place: replies, expression: ({ c }) => [c] },
+		{ place: resource, expression: ({ r }) => [r] },
+	],
 };
 
+const ana = { author: "ana", pr: "pr-1" };
+const bob = { author: "bob", pr: "pr-2" };
+
 describe("fire, examples", () => {
-	test("consumes the input weight and produces the output weight", () => {
-		const fired = fire(review, { [inbox]: 3 });
-		expect(fired).toStrictEqual({ ok: true, value: { [inbox]: 1, [done]: 1 } });
+	test("takes the input tokens of the binding and gives the output tokens", () => {
+		const marking = { [comments.id]: [ana, bob], [resource.id]: ["pr-2", "pr-1"] };
+		expect(fire(answer, { c: ana, r: "pr-1" }, marking)).toStrictEqual({
+			ok: true,
+			value: { [comments.id]: [bob], [resource.id]: ["pr-2", "pr-1"], [replies.id]: [ana] },
+		});
 	});
 
-	test("removes a place that reaches zero tokens", () => {
-		expect(fire(review, { [inbox]: 2 })).toStrictEqual({ ok: true, value: { [done]: 1 } });
+	test("removes a place that has no tokens left", () => {
+		const fired = fire(answer, { c: ana, r: "pr-1" }, { [comments.id]: [ana], [resource.id]: ["pr-1"] });
+		expect(fired).toStrictEqual({ ok: true, value: { [resource.id]: ["pr-1"], [replies.id]: [ana] } });
 	});
 
-	test("reports each shortfall when the transition is not enabled", () => {
-		expect(fire(review, { [inbox]: 1 })).toStrictEqual({
+	test("treats tokens with equal JSON values as equal, whatever the key order", () => {
+		const marking = { [comments.id]: [{ pr: "pr-1", author: "ana" }], [resource.id]: ["pr-1"] };
+		expect(fire(answer, { c: ana, r: "pr-1" }, marking).ok).toBe(true);
+	});
+
+	test("reports a false guard as not-a-binding", () => {
+		expect(fire(answer, { c: ana, r: "pr-2" }, { [comments.id]: [ana], [resource.id]: ["pr-2"] })).toStrictEqual({
+			ok: false,
+			error: { kind: "not-a-binding", transition: answer.id, problems: ["answer: the guard is false"] },
+		});
+	});
+
+	test("reports each wrong value as not-a-binding and does not run the guard", () => {
+		const guard = vi.fn(() => true);
+		const fired = fire({ ...answer, guard }, { c: 7, x: null }, {});
+		expect(fired).toStrictEqual({
+			ok: false,
+			error: {
+				kind: "not-a-binding",
+				transition: answer.id,
+				problems: [
+					"answer: variable r has no value",
+					"answer: c = 7 is not in Comment",
+					"answer: x is not a variable",
+				],
+			},
+		});
+		expect(guard).not.toHaveBeenCalled();
+	});
+
+	test("reports the tokens that each input place lacks as not-enabled", () => {
+		expect(fire(answer, { c: ana, r: "pr-1" }, { [resource.id]: ["pr-2"] })).toStrictEqual({
 			ok: false,
 			error: {
 				kind: "not-enabled",
-				transition: review.id,
-				shortfalls: [{ place: inbox, required: 2, available: 1 }],
+				transition: answer.id,
+				shortfalls: [
+					{ place: comments.id, missing: [ana] },
+					{ place: resource.id, missing: ["pr-1"] },
+				],
 			},
 		});
 	});
 
-	test("adds the weights of two arcs from the same place", () => {
-		const twice: Transition = {
-			...review,
-			inputs: [review.inputs[0] ?? { place: inbox, weight: 1 }, { place: inbox, weight: 1 }],
+	test("takes one token for each entry, so a variable listed twice takes two equal tokens", () => {
+		const pair: Transition<"r"> = {
+			id: transitionId("pair"),
+			variables: { r: pr },
+			guard: () => true,
+			inputs: [
+				{ place: resource, variables: ["r", "r"] },
+				{ place: resource, variables: ["r"] },
+			],
+			outputs: [],
 		};
-		expect(isEnabled(twice, { [inbox]: 2 })).toBe(false);
-		expect(isEnabled(twice, { [inbox]: 3 })).toBe(true);
+		expect(fire(pair, { r: "pr-1" }, { [resource.id]: ["pr-1", "pr-1"] })).toStrictEqual({
+			ok: false,
+			error: { kind: "not-enabled", transition: pair.id, shortfalls: [{ place: resource.id, missing: ["pr-1"] }] },
+		});
+		expect(fire(pair, { r: "pr-1" }, { [resource.id]: ["pr-1", "pr-2", "pr-1", "pr-1"] })).toStrictEqual({
+			ok: true,
+			value: { [resource.id]: ["pr-2"] },
+		});
+	});
+
+	test("throws a TypeError for an output token outside its place's colour set, a bug in the net", () => {
+		const broken: Transition<"c" | "r"> = {
+			...answer,
+			outputs: [{ place: replies, expression: ({ r }) => [r, 7] }],
+		};
+		expect(() => fire(broken, { c: ana, r: "pr-1" }, { [comments.id]: [ana], [resource.id]: ["pr-1"] })).toThrow(
+			new TypeError('answer: output "pr-1", 7 on replies is not in Comment'),
+		);
+	});
+});
+
+describe("enabledBindings, examples", () => {
+	test("lists each enabled binding once: variables in declaration order, values in arrival order", () => {
+		const marking = { [comments.id]: [bob, ana, bob], [resource.id]: ["pr-1", "pr-2"] };
+		expect(enabledBindings(answer, marking)).toStrictEqual([
+			{ c: bob, r: "pr-2" },
+			{ c: ana, r: "pr-1" },
+		]);
+	});
+
+	test("takes a variable's values only from the places of its own arcs", () => {
+		const other: Place = { id: placeId("other"), colourSet: pr };
+		const both: Transition<"r" | "s"> = {
+			id: transitionId("both"),
+			variables: { r: pr, s: pr },
+			guard: () => true,
+			inputs: [
+				{ place: resource, variables: ["r"] },
+				{ place: other, variables: ["s"] },
+			],
+			outputs: [],
+		};
+		expect(enabledBindings(both, { [resource.id]: ["pr-1"], [other.id]: ["pr-2", "pr-1"] })).toStrictEqual([
+			{ r: "pr-1", s: "pr-2" },
+			{ r: "pr-1", s: "pr-1" },
+		]);
+	});
+
+	test("a variable on two input arcs needs an equal token on both places", () => {
+		const ci: Place = { id: placeId("ci"), colourSet: pr };
+		const join: Transition<"r"> = {
+			id: transitionId("join"),
+			variables: { r: pr },
+			guard: () => true,
+			inputs: [
+				{ place: resource, variables: ["r"] },
+				{ place: ci, variables: ["r"] },
+			],
+			outputs: [],
+		};
+		expect(enabledBindings(join, { [resource.id]: ["pr-1", "pr-2"], [ci.id]: ["pr-2", "pr-3"] })).toStrictEqual([
+			{ r: "pr-2" },
+		]);
+	});
+
+	test("a transition with no variables has one binding, the empty one", () => {
+		const start: Transition<never> = {
+			id: transitionId("start"),
+			variables: {},
+			guard: () => true,
+			inputs: [],
+			outputs: [{ place: resource, expression: () => ["pr-9"] }],
+		};
+		expect(enabledBindings(start, {})).toStrictEqual([{}]);
+		expect(enabledBindings({ ...start, guard: () => false }, {})).toStrictEqual([]);
 	});
 });
 
 describe("fire, properties", () => {
-	test.prop([transitionArbitrary, markingArbitrary])(
-		"is enabled exactly when it has no shortfalls",
-		(transition, marking) => {
-			expect(isEnabled(transition, marking)).toBe(shortfalls(transition, marking).length === 0);
-			expect(fire(transition, marking).ok).toBe(isEnabled(transition, marking));
+	test.prop([firingArbitrary])(
+		"fires exactly the bindings that enabledBindings lists",
+		({ transition, binding, marking }) => {
+			const listed = enabledBindings(transition, marking).map(canonical);
+			expect(fire(transition, binding, marking).ok).toBe(listed.includes(canonical(binding)));
 		},
 	);
 
-	test.prop([transitionArbitrary, markingArbitrary])("moves exactly the arc weights", (transition, marking) => {
-		const fired = fire(transition, marking);
+	test.prop([firingArbitrary])("moves exactly the tokens of the arcs", ({ transition, binding, marking }) => {
+		const fired = fire(transition, binding, marking);
 		fc.pre(fired.ok);
-		const expected = totalTokens(marking) - totalWeight(transition.inputs) + totalWeight(transition.outputs);
-		expect(totalTokens(fired.value)).toBe(expected);
+		const taken = transition.inputs.reduce((sum, arc) => sum + arc.variables.length, 0);
+		const given = transition.outputs.reduce((sum, arc) => sum + arc.expression(binding).length, 0);
+		expect(countTokens(fired.value)).toBe(countTokens(marking) - taken + given);
 	});
 
-	test.prop([transitionArbitrary, markingArbitrary])(
-		"never leaves a negative or zero count",
-		(transition, marking) => {
-			const fired = fire(transition, marking);
-			if (fired.ok) {
-				expect(Object.values<number>(fired.value).every((count) => count > 0)).toBe(true);
-			}
-		},
-	);
-
-	test.prop([transitionArbitrary, markingArbitrary])("does not change the marking it reads", (transition, marking) => {
-		const before = { ...marking };
-		fire(transition, marking);
-		expect(marking).toStrictEqual(before);
+	test.prop([firingArbitrary])("does not change the marking it reads", ({ transition, binding, marking }) => {
+		const before = canonical(marking);
+		fire(transition, binding, marking);
+		enabledBindings(transition, marking);
+		expect(canonical(marking)).toBe(before);
 	});
-
-	test.prop([transitionArbitrary, markingArbitrary])(
-		"reports the real token count of each short place",
-		(transition, marking) => {
-			for (const shortfall of shortfalls(transition, marking)) {
-				expect(shortfall.available).toBe(tokensAt(marking, shortfall.place));
-				expect(shortfall.available).toBeLessThan(shortfall.required);
-			}
-		},
-	);
 });

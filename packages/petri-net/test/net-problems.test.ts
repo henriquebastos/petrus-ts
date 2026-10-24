@@ -1,27 +1,73 @@
 import { describe, expect, test } from "vitest";
-import type { Transition } from "../src/index.ts";
-import { netProblems, placeId, transitionId } from "../src/index.ts";
+import type { ColourSet, Net, Place, Transition } from "../src/index.ts";
+import { markingProblems, netProblems, placeId, transitionId } from "../src/index.ts";
 
-const a = placeId("a");
+const number: ColourSet = { name: "Number", contains: (token) => typeof token === "number" };
+const text: ColourSet = { name: "Text", contains: (token) => typeof token === "string" };
+const a: Place = { id: placeId("a"), colourSet: number };
+const b: Place = { id: placeId("b"), colourSet: text };
 
-function transition(id: string, weight: number): Transition {
-	return { id: transitionId(id), inputs: [{ place: a, weight }], outputs: [{ place: a, weight: 1 }] };
+function move(id: string): Transition<"x"> {
+	return {
+		id: transitionId(id),
+		variables: { x: number },
+		guard: () => true,
+		inputs: [{ place: a, variables: ["x"] }],
+		outputs: [{ place: a, expression: ({ x }) => [x] }],
+	};
 }
 
+const net: Net = { places: [a, b], transitions: [move("t1"), move("t2")] };
+
 describe("netProblems", () => {
-	test("a net with unique ids and positive integer weights has no problem", () => {
-		expect(netProblems([transition("t1", 1), transition("t2", 3)])).toStrictEqual([]);
+	test("a net with unique ids, declared places and consistent variables has no problem", () => {
+		expect(netProblems(net)).toStrictEqual([]);
 	});
 
-	test("reports each weight that is not a positive integer", () => {
-		expect(netProblems([transition("zero", 0), transition("negative", -1), transition("half", 0.5)])).toStrictEqual([
-			"zero: weight 0 on a is not a positive integer",
-			"negative: weight -1 on a is not a positive integer",
-			"half: weight 0.5 on a is not a positive integer",
+	test("reports an id used twice", () => {
+		expect(netProblems({ places: [a, a, b], transitions: [move("t1"), move("t1")] })).toStrictEqual([
+			"a: id used 2 times",
+			"t1: id used 2 times",
 		]);
 	});
 
-	test("reports an id used by more than one transition", () => {
-		expect(netProblems([transition("t1", 1), transition("t1", 2)])).toStrictEqual(["t1: id used 2 times"]);
+	test("reports an arc to a place that is not in the net", () => {
+		const elsewhere: Place = { id: placeId("elsewhere"), colourSet: number };
+		const lost: Transition<"x"> = { ...move("lost"), outputs: [{ place: elsewhere, expression: () => [] }] };
+		expect(netProblems({ places: [a], transitions: [lost] })).toStrictEqual([
+			"lost: place elsewhere is not in the net",
+		]);
+	});
+
+	test("reports a variable that is undeclared, on no input arc, or of another colour set than its place", () => {
+		const wrong: Transition = {
+			id: transitionId("wrong"),
+			variables: { x: number, unused: number, y: number },
+			guard: () => true,
+			inputs: [
+				{ place: a, variables: ["x", "ghost"] },
+				{ place: b, variables: ["y"] },
+			],
+			outputs: [],
+		};
+		expect(netProblems({ places: [a, b], transitions: [wrong] })).toStrictEqual([
+			"wrong: variable unused is on no input arc",
+			"wrong: variable ghost on a is not declared",
+			"wrong: variable y has colour set Number, place b has Text",
+		]);
+	});
+});
+
+describe("markingProblems", () => {
+	test("a marking of the net's places with tokens of their colour sets has no problem", () => {
+		expect(markingProblems(net, { [a.id]: [1, 2], [b.id]: ["x"] })).toStrictEqual([]);
+	});
+
+	test("reports a place outside the net, an empty place, and a token outside its colour set", () => {
+		expect(markingProblems(net, { [placeId("c")]: [1], [a.id]: [1, "one"], [b.id]: [] })).toStrictEqual([
+			"marking: place c is not in the net",
+			'marking: "one" on a is not in Number',
+			"marking: place b is listed with no tokens",
+		]);
 	});
 });

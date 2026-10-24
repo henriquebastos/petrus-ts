@@ -4,7 +4,7 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 
 | Topic                                                 | Read                                                                                         |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Places, transitions, markings, firing, net validation | `packages/petri-net/docs/spec.md`                                                            |
+| Colour sets, bindings, markings, firing, validation   | `packages/petri-net/docs/spec.md`                                                            |
 | Steps, stores, commits, crashes, concurrency          | `packages/runtime/docs/spec.md`                                                              |
 | Code style                                            | `docs/style-guide.md`                                                                        |
 | A lint, type, dependency or test gate                 | the config file and its comments, the gate test in `test/gates/`, its fixture in `fixtures/` |

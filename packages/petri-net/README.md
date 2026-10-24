@@ -1,19 +1,32 @@
 # @petrus/petri-net
 
-Places, transitions, markings and the firing rule. The package is pure: it has no clock, no disk and no npm dependency.
+A coloured Petri net: typed places, transitions with variables and guards, bindings, markings and the firing rule.
+The package is pure: it has no clock, no disk and no npm dependency.
 
 ```ts
-import { fire, placeId, transitionId } from "@petrus/petri-net";
+import type { ColourSet, Place, Transition } from "@petrus/petri-net";
+import { enabledBindings, fire, placeId, transitionId } from "@petrus/petri-net";
 
-const ready = placeId("ready");
-const done = placeId("done");
-const finish = { id: transitionId("finish"), inputs: [{ place: ready, weight: 1 }], outputs: [{ place: done, weight: 1 }] };
+const job: ColourSet = { name: "Job", contains: (token) => typeof token === "string" };
+const ready: Place = { id: placeId("ready"), colourSet: job };
+const done: Place = { id: placeId("done"), colourSet: job };
 
-const fired = fire(finish, { [ready]: 1 });
+const finish: Transition<"j"> = {
+ id: transitionId("finish"),
+ variables: { j: job },
+ guard: () => true,
+ inputs: [{ place: ready, variables: ["j"] }],
+ outputs: [{ place: done, expression: ({ j }) => [j] }],
+};
+
+const marking = { [ready.id]: ["job-1", "job-2"] };
+enabledBindings(finish, marking); // [{ j: "job-1" }, { j: "job-2" }]
+
+const fired = fire(finish, { j: "job-1" }, marking);
 if (fired.ok) {
- // fired.value is { done: 1 }
+ // fired.value is { ready: ["job-2"], done: ["job-1"] }
 } else {
- // fired.error.shortfalls lists each input place that holds too few tokens
+ // fired.error is not-a-binding (the problems) or not-enabled (the tokens each place lacks)
 }
 ```
 

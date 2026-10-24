@@ -17,7 +17,7 @@ write `value satisfies never`.
 
 ```ts
 // packages/runtime/src/runtime.ts
-export type StepFailure = NotEnabled | UnknownTransition;
+export type StepFailure = NotABinding | NotEnabled | UnknownTransition;
 ```
 
 Pattern: Vanderkam Item 29 "Prefer Types That Always Represent Valid States"; Pocock "satisfies never".
@@ -28,7 +28,11 @@ A caller must handle a `Result`. It cannot forget a failure that the type shows.
 
 ```ts
 // packages/petri-net/src/fire.ts
-export function fire(transition: Transition, marking: Marking): Result<Marking, NotEnabled> {
+export function fire(
+ transition: Transition,
+ binding: Binding,
+ marking: Marking,
+): Result<Marking, NotABinding | NotEnabled> {
 ```
 
 Throw only `Error` objects, and only for bugs and infrastructure failures (a store that is down).
@@ -54,7 +58,7 @@ Functions return new values. Nobody changes a marking behind another function's 
 
 ```ts
 // packages/petri-net/src/marking.ts
-export type Marking = Readonly<Record<PlaceId, number>>;
+export type Marking = Readonly<Record<PlaceId, readonly Token[]>>;
 ```
 
 Pattern: Vanderkam Item 14; Pocock rule `readonly-properties`.

@@ -13,7 +13,7 @@ and a test in `test/gates/` that shows the gate still fails on it.
 
 | Package             | Role                                                         | May import  | Docs                                                                            |
 | ------------------- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------- |
-| `@petrus/petri-net` | Places, transitions, markings, the firing rule. Pure.        | nothing     | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
+| `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.        | nothing     | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
 | `@petrus/runtime`   | Runs one net instance over a store: steps, commits, crashes. | `petri-net` | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:

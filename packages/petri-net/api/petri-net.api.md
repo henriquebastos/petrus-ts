@@ -5,16 +5,22 @@
 ```ts
 
 // @public
-export function addTokens(marking: Marking, place: PlaceId, delta: number): Marking;
+export function addTokens(marking: Marking, place: PlaceId, tokens: readonly Token[]): Marking;
 
 // @public
-export type Arc = {
-    readonly place: PlaceId;
-    readonly weight: number;
+export type Binding<V extends string = string> = Readonly<Record<V, Token>>;
+
+// @public
+export type ColourSet = {
+    readonly name: string;
+    readonly contains: (token: Token) => boolean;
 };
 
 // @public
 export const emptyMarking: Marking;
+
+// @public
+export function enabledBindings(transition: Transition, marking: Marking): readonly Binding[];
 
 // @public
 export type Err<TError> = {
@@ -26,16 +32,35 @@ export type Err<TError> = {
 export function err<TError>(error: TError): Err<TError>;
 
 // @public
-export function fire(transition: Transition, marking: Marking): Result<Marking, NotEnabled>;
+export function fire(transition: Transition, binding: Binding, marking: Marking): Result<Marking, NotABinding | NotEnabled>;
 
 // @public
-export function isEnabled(transition: Transition, marking: Marking): boolean;
+export type InputArc<V extends string = string> = {
+    readonly place: Place;
+    readonly variables: readonly V[];
+};
 
 // @public
-export type Marking = Readonly<Record<PlaceId, number>>;
+export type Marking = Readonly<Record<PlaceId, readonly Token[]>>;
 
 // @public
-export function netProblems(transitions: readonly Transition[]): readonly string[];
+export function markingProblems(net: Net, marking: Marking): readonly string[];
+
+// @public
+export type Net = {
+    readonly places: readonly Place[];
+    readonly transitions: readonly Transition[];
+};
+
+// @public
+export function netProblems(net: Net): readonly string[];
+
+// @public
+export type NotABinding = {
+    readonly kind: "not-a-binding";
+    readonly transition: TransitionId;
+    readonly problems: readonly string[];
+};
 
 // @public
 export type NotEnabled = {
@@ -54,6 +79,18 @@ export type Ok<TValue> = {
 export function ok<TValue>(value: TValue): Ok<TValue>;
 
 // @public
+export type OutputArc<V extends string = string> = {
+    readonly place: Place;
+    readonly expression: (binding: Binding<V>) => readonly Token[];
+};
+
+// @public
+export type Place = {
+    readonly id: PlaceId;
+    readonly colourSet: ColourSet;
+};
+
+// @public
 export type PlaceId = string & {
     readonly __brand: "PlaceId";
 };
@@ -62,26 +99,32 @@ export type PlaceId = string & {
 export function placeId(name: string): PlaceId;
 
 // @public
+export function removeTokens(marking: Marking, place: PlaceId, tokens: readonly Token[]): Marking;
+
+// @public
 export type Result<TValue, TError> = Ok<TValue> | Err<TError>;
 
 // @public
 export type Shortfall = {
     readonly place: PlaceId;
-    readonly required: number;
-    readonly available: number;
+    readonly missing: readonly Token[];
 };
 
 // @public
-export function shortfalls(transition: Transition, marking: Marking): readonly Shortfall[];
+export type Token = null | boolean | number | string | readonly Token[] | {
+    readonly [key: string]: Token;
+};
 
 // @public
-export function tokensAt(marking: Marking, place: PlaceId): number;
+export function tokensAt(marking: Marking, place: PlaceId): readonly Token[];
 
 // @public
-export type Transition = {
+export type Transition<V extends string = string> = {
     readonly id: TransitionId;
-    readonly inputs: readonly Arc[];
-    readonly outputs: readonly Arc[];
+    readonly variables: Readonly<Record<V, ColourSet>>;
+    readonly guard: (binding: Binding<V>) => boolean;
+    readonly inputs: readonly InputArc<V>[];
+    readonly outputs: readonly OutputArc<V>[];
 };
 
 // @public

@@ -1,47 +1,112 @@
+import { bindingProblems, valueOf } from "./binding.ts";
 import type { PlaceId, TransitionId } from "./ids.ts";
 import type { Marking } from "./marking.ts";
-import { addTokens, tokensAt } from "./marking.ts";
+import { addTokens, removeTokens, tokensAt } from "./marking.ts";
+import type { Binding, OutputArc, Transition } from "./net.ts";
 import type { Result } from "./result.ts";
 import { err, ok } from "./result.ts";
-import type { Arc, Transition } from "./transition.ts";
+import type { Token } from "./token.ts";
+import { distinctTokens, takeTokens, tokenKey } from "./token.ts";
 
-/** One input place that holds fewer tokens than the transition consumes. */
-export type Shortfall = { readonly place: PlaceId; readonly required: number; readonly available: number };
+/** One input place that lacks tokens the binding takes. */
+export type Shortfall = { readonly place: PlaceId; readonly missing: readonly Token[] };
 
-/** Why a transition did not fire: the input places that hold too few tokens. */
+/** The values are not a binding of the transition. Each problem is one sentence. */
+export type NotABinding = {
+	readonly kind: "not-a-binding";
+	readonly transition: TransitionId;
+	readonly problems: readonly string[];
+};
+
+/** The binding is right, but input places lack the tokens it takes. */
 export type NotEnabled = {
 	readonly kind: "not-enabled";
 	readonly transition: TransitionId;
 	readonly shortfalls: readonly Shortfall[];
 };
 
-/** Lists every input place that holds too few tokens. An empty list means the transition is enabled. */
-export function shortfalls(transition: Transition, marking: Marking): readonly Shortfall[] {
-	return [...demandByPlace(transition.inputs)]
-		.map(([place, required]) => ({ place, required, available: tokensAt(marking, place) }))
-		.filter((shortfall) => shortfall.available < shortfall.required);
+/**
+ * Every enabled binding of `transition` in `marking`, each once. A variable takes its candidate values from the
+ * places of the input arcs that list it. The order is fixed: variables in declaration order, then values in the
+ * order of those arcs and, within a place, in arrival order. The transition must come from a net with no problems
+ * (see `netProblems`).
+ */
+export function enabledBindings(transition: Transition, marking: Marking): readonly Binding[] {
+	return Object.keys(transition.variables)
+		.reduce<readonly Binding[]>(
+			(partials, variable) =>
+				partials.flatMap((partial) =>
+					candidates(transition, marking, variable).map((token) => ({ ...partial, [variable]: token })),
+				),
+			[{}],
+		)
+		.filter((binding) => whyNot(transition, binding, marking) === undefined);
 }
 
-/** True when every input place holds at least the tokens the transition consumes. */
-export function isEnabled(transition: Transition, marking: Marking): boolean {
-	return shortfalls(transition, marking).length === 0;
-}
-
-/** Consumes the input tokens and produces the output tokens, or reports why the transition is not enabled. */
-export function fire(transition: Transition, marking: Marking): Result<Marking, NotEnabled> {
-	const missing = shortfalls(transition, marking);
-	if (missing.length > 0) {
-		return err({ kind: "not-enabled", transition: transition.id, shortfalls: missing });
+/**
+ * Fires the binding element (transition, binding): removes the tokens the input arcs take and adds the tokens the
+ * output arcs give. It returns `not-a-binding` or `not-enabled` instead when the binding cannot fire.
+ * An output token outside its place's colour set is a bug in the net, so it throws a TypeError. The transition must
+ * come from a net with no problems (see `netProblems`).
+ */
+export function fire(
+	transition: Transition,
+	binding: Binding,
+	marking: Marking,
+): Result<Marking, NotABinding | NotEnabled> {
+	const failure = whyNot(transition, binding, marking);
+	if (failure !== undefined) {
+		return err(failure);
 	}
-	const consumed = transition.inputs.reduce((next, arc) => addTokens(next, arc.place, -arc.weight), marking);
-	return ok(transition.outputs.reduce((next, arc) => addTokens(next, arc.place, arc.weight), consumed));
+	const consumed = [...demandByPlace(transition, binding)].reduce(
+		(next, [place, wanted]) => removeTokens(next, place, wanted),
+		marking,
+	);
+	return ok(
+		transition.outputs.reduce(
+			(next, arc) => addTokens(next, arc.place.id, produced(transition, arc, binding)),
+			consumed,
+		),
+	);
 }
 
-/** Two arcs from the same place add up, so the check sees the total demand. */
-function demandByPlace(arcs: readonly Arc[]): ReadonlyMap<PlaceId, number> {
-	const demand = new Map<PlaceId, number>();
-	for (const arc of arcs) {
-		demand.set(arc.place, (demand.get(arc.place) ?? 0) + arc.weight);
+/** Why the binding element cannot fire, or `undefined` when it is enabled. */
+function whyNot(transition: Transition, binding: Binding, marking: Marking): NotABinding | NotEnabled | undefined {
+	const problems = bindingProblems(transition, binding);
+	if (problems.length > 0) {
+		return { kind: "not-a-binding", transition: transition.id, problems };
+	}
+	const shortfalls = [...demandByPlace(transition, binding)]
+		.map(([place, wanted]) => ({ place, missing: takeTokens(tokensAt(marking, place), wanted).missing }))
+		.filter((shortfall) => shortfall.missing.length > 0);
+	return shortfalls.length > 0 ? { kind: "not-enabled", transition: transition.id, shortfalls } : undefined;
+}
+
+function candidates(transition: Transition, marking: Marking, variable: string): readonly Token[] {
+	return distinctTokens(
+		transition.inputs
+			.filter((arc) => arc.variables.includes(variable))
+			.flatMap((arc) => tokensAt(marking, arc.place.id)),
+	);
+}
+
+/** Two arcs from the same place add up, so the check sees all the tokens the binding takes there. */
+function demandByPlace(transition: Transition, binding: Binding): ReadonlyMap<PlaceId, readonly Token[]> {
+	const demand = new Map<PlaceId, readonly Token[]>();
+	for (const arc of transition.inputs) {
+		const wanted = arc.variables.map((variable) => valueOf(binding, variable));
+		demand.set(arc.place.id, [...(demand.get(arc.place.id) ?? []), ...wanted]);
 	}
 	return demand;
+}
+
+function produced(transition: Transition, arc: OutputArc, binding: Binding): readonly Token[] {
+	const tokens = arc.expression(binding);
+	const outside = tokens.filter((token) => !arc.place.colourSet.contains(token));
+	if (outside.length > 0) {
+		throw new TypeError(
+			`${transition.id}: output ${outside.map(tokenKey).join(", ")} on ${arc.place.id} is not in ${arc.place.colourSet.name}`,
+		);
+	}
+	return tokens;
 }
