@@ -16,7 +16,7 @@ import { context, createClock, createDisk, enqueueAndSettle, inProcess } from ".
 import type { Fault, RuntimeFactory } from "./properties.ts";
 import { everyCommitHeld, faultArbitrary, lastState } from "./properties.ts";
 
-const job: ColourSet = { name: "Job", contains: (token) => typeof token === "string" && /^j\d$/.test(token) };
+const job: ColourSet = { name: "Job", contains: (token) => typeof token === "string" && /^j\d+$/.test(token) };
 const slot: ColourSet = { name: "Slot", contains: (token) => token === "slot" };
 const receipt: ColourSet = {
 	name: "Receipt",

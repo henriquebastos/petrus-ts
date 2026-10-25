@@ -25,7 +25,7 @@ export function createUncaughtThrowRuntime(options: RuntimeOptions): Runtime {
 					const { id, binding } = running.input;
 					const transition = transitionId(running.input.transition);
 					const handler = handlers.find((candidate) => candidate.transition.id === transition);
-					const result = await handler!.run(binding, { operationId: id });
+					const result = await handler!.run(binding, { operationId: id, signal: taskRuntime.signal });
 					if ("delayMs" in result) {
 						throw new Error("this planted defect runs no delayed result");
 					}

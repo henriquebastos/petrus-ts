@@ -1,5 +1,5 @@
 import type { Context } from "@earendil-works/chord";
-import type { ConversationId, Extension, Session } from "@earendil-works/pi-durable";
+import type { ConversationId, Extension, Harness } from "@earendil-works/pi-durable";
 import { defineExtension } from "@earendil-works/pi-durable";
 import type { Net, SelectionPolicy } from "@petrus/petri-net";
 import { netProblems } from "@petrus/petri-net";
@@ -7,16 +7,16 @@ import { admit } from "./admit.ts";
 import { netInstanceRecord } from "./net-instance-record.ts";
 import { createOperationRun } from "./operation-run.ts";
 import type { Handler } from "./handlers.ts";
-import { withHandlers } from "./handlers.ts";
+import { handlerProblems, withHandlers } from "./handlers.ts";
 import type { Committed } from "./net-instance-commit.ts";
 import { checkedState, commitToNetInstance } from "./net-instance-commit.ts";
 import type { Batch, NetInstanceState } from "./net-instance.ts";
 import type { Operation } from "./operations.ts";
-import { hostBatchProblems, operationsInFlight } from "./operations.ts";
+import { hostBatchProblems, operationsInFlight, startedOperations } from "./operations.ts";
 import type { Clock } from "./seams.ts";
 
-/** Where net instances live: a Durable Session, whose commits and committed reads a net instance uses. */
-export type NetInstanceHost = Pick<Session, "commit" | "snapshot">;
+/** Where net instances live: a Durable Harness, whose commits, committed reads and task aborts a net instance uses. */
+export type NetInstanceHost = Pick<Harness, "commit" | "snapshot" | "abortTask">;
 
 /** One net instance: the state of the net in one Durable conversation. */
 export type NetInstance = {
@@ -31,6 +31,14 @@ export type NetInstance = {
 	readonly state: (context: Context) => Promise<NetInstanceState>;
 	/** The operations that the committed log started and has no result for, in log order. */
 	readonly inFlight: (context: Context) => Promise<readonly Operation[]>;
+	/**
+	 * Aborts an operation. Its task stops the handler (see `HandlerContext.signal`), then one commit records the
+	 * result `aborted`, steps the net until it is quiet, and ends the task. `marked` when the abort was recorded,
+	 * `terminal` when the task had already ended: as a rule its operation has a result, but a faulted task leaves its
+	 * operation in flight. An operation that has not started, or whose transition declares
+	 * no variant `aborted`, is a bug in the host, so it throws.
+	 */
+	readonly abort: (operationId: string, context: Context) => Promise<"marked" | "terminal">;
 };
 
 /** A net that runs on Pi Durable: the extension that the host installs, and the instances it opens. */
@@ -67,12 +75,19 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 		options.net,
 		handlers.map((handler) => handler.transition),
 	);
-	const problems = netProblems(net);
+	const problems = [...netProblems(net), ...handlerProblems(handlers.map((handler) => handler.transition))];
 	if (problems.length > 0) {
 		throw new Error(`invalid net: ${problems.join("; ")}`);
 	}
 	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
-	const { task, parts } = createOperationRun({ name, net, policy, handlerIds, handlers, retryDelayMs });
+	const { task, parts, taskOf, abortable } = createOperationRun({
+		name,
+		net,
+		policy,
+		handlerIds,
+		handlers,
+		retryDelayMs,
+	});
 
 	function instance(host: NetInstanceHost, conversationId: ConversationId): NetInstance {
 		async function state(context: Context): Promise<NetInstanceState> {
@@ -93,6 +108,18 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 			},
 			state,
 			inFlight: async (context) => operationsInFlight(handlerIds, (await state(context)).log),
+			abort: async (operationId, context) => {
+				const { log } = await state(context);
+				const operation = startedOperations(handlerIds, log).find((started) => started.id === operationId);
+				if (operation === undefined) {
+					throw new Error(`no operation ${operationId} has started`);
+				}
+				if (!abortable(operation.transition)) {
+					throw new Error(`${operation.transition} declares no variant aborted, so its tokens would stay taken`);
+				}
+				const taskId = await host.commit((tx) => taskOf(tx, conversationId, operationId), context);
+				return host.abortTask(taskId, context);
+			},
 		};
 	}
 

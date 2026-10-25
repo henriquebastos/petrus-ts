@@ -6,6 +6,7 @@ export type {
 	HandlerResult,
 	HandlerTransition,
 	ResultArc,
+	Signal,
 	Variant,
 } from "./handlers.ts";
 export { busyPlaceId, resultPlaceId, withHandlers } from "./handlers.ts";

@@ -101,8 +101,8 @@ it allows this.
   enters after that run ends. If the first run's work goes on outside after the process died, as a remote call can, two
   holders are inside at once. A resource that can outlive the process that called it needs a lease or a fence
   keyed by the operation id. The same holds for a meal and its forks. No test covers this case.
-- A handler has no abort that gives the resource token back: aborting its task leaves the operation in flight.
-  A process that never leaves holds the resource token for ever.
+- These nets declare no variant `aborted`, so aborting a task leaves its operation in flight (see
+  [aborts.md](../../packages/runtime/docs/aborts.md)). A process that never leaves holds the resource token for ever.
 - A philosopher can starve. EWD 310 says that taking both forks at once leaves "a particular philosopher being
   starved to death by a conspiration of his two neighbours". If the two neighbours take turns, one of them always
   holds a fork that the philosopher between them needs. `definitionOrder` keeps no state, so it cannot hold a

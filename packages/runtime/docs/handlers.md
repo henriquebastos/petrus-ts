@@ -12,7 +12,7 @@ The core rule:
 - A **handler transition** (`HandlerTransition` in `src/handlers.ts`) has variables, a guard and input arcs like a
   transition, but no output arcs. It has **variants** instead: each one names a way the work can end, the colour
   set of its **value**, and output arcs whose expressions read the binding and the value.
-- A **handler** (`Handler`) is a handler transition with `run(binding, { operationId })`, which returns a
+- A **handler** (`Handler`) is a handler transition with `run(binding, { operationId, signal })`, which returns a
   **result** `{ variant, value }`. An expected failure is a variant; a throw means a bug or an outage.
 - `withHandlers(net, transitions)` returns the **plain net** that a net with handler transitions is short for. Each
   handler transition `t` becomes:
@@ -21,8 +21,8 @@ The core rule:
   - for each variant `v`, the transition `t:v`, which takes a binding from `t:busy` and a result with variant `v`
     for that binding from `t:result`, and produces the variant's outputs.
 
-  The input tokens stay taken while the work runs, so a resource token is held for the whole work. The runtime
-  runs the plain net, so the net checks and the replay are those of the petri-net spec.
+  The input tokens stay taken while the work runs, so a resource token is held for the whole work. The net checks
+  and the replay are those of the petri-net spec.
 - An **operation** is the work that one occurrence of `t` started. Its id is `t/<position of the occurrence in the
   log>`, so it stays the same after a restart. It is **in flight** until the log holds its result.
   `inFlight(context)` lists the operations in flight, in log order.
@@ -59,10 +59,10 @@ Paths are relative to this package.
   Tests: `test/handlers.test.ts` "an enqueue starts an operation and creates its task in one commit; the task runs
   the handler, records its result and steps until quiet", "the handler tasks end every operation by the variant
   that its handler returns".
-- An aborted task ends as `aborted`, also while its handler runs: no result is recorded and nothing is reported.
-  Tests: `test/handlers.test.ts` "aborting a handler task ends it as aborted without
-  running the handler, and its operation stays in flight", "aborting a task while its handler runs ends it as
-  aborted, records no result and reports nothing".
+- With no variant `aborted` ([aborts.md](aborts.md)), an aborted task ends as `aborted`, also while its handler
+  runs: no result is recorded and nothing is reported. Tests: `test/handlers.test.ts` "aborting a handler task
+  ends it as aborted without running the handler, and its operation stays in flight", "aborting a task while its
+  handler runs ends it as aborted, records no result and reports nothing".
 - A process dies before or after any storage commit lands, and the service has one outage. A new process
   enqueues the first batch again and runs the tasks. At every commit the marking is the replay of the log
   and the net is quiet. Each job ended once. Each operation has one result, under its own
@@ -105,9 +105,9 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
 ## 4 What a handler must do
 
 - Expect to run more than once for one operation: after a crash, a throw, or a result that did not commit. Give
-  `operationId` to the outside service, so that a second run finds what the first did. The id is unique only in
-  one net instance; a host adds the net's name and the conversation id.
-- Return an expected failure as a variant, and throw only for a bug or an outage.
+  `operationId` to the outside service, so a second run finds what the first did. The id is unique in one
+  net instance: a host adds the net and the conversation.
+- Return an expected failure as a variant, and throw only for a bug or an outage. Stop when `signal` aborts.
 
 ## 5 Limits
 
@@ -116,7 +116,7 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
   the next run of the operation can overlap it: two holders are inside at once. See section 5 of
   [examples/classics/README.md](../../../examples/classics/README.md).
 - A handler has no timeout. A wait inside a handler does not survive a crash; a delayed result does.
-- An aborted task leaves its operation in flight for ever, with its input tokens taken.
+- With no variant `aborted`, an aborted operation stays in flight for ever, with its input tokens taken.
 - Durable parks a task that a crash cuts off `restartLimit` times in a row (default 5). Its operation stays in
   flight until the host calls `Harness.retryTask`.
 - A throw that comes back each time, such as a result that does not fit or a net that does not become quiet in

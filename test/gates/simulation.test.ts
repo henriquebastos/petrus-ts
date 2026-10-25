@@ -6,6 +6,10 @@ import { delayFaultProperty } from "../../packages/runtime/test/delay-properties
 import { createEarlyDueRuntime } from "../../fixtures/simulation/early-due-runtime.ts";
 import { createLostDueRuntime } from "../../fixtures/simulation/lost-due-runtime.ts";
 import { createFromRunRuntime } from "../../fixtures/simulation/from-run-runtime.ts";
+import { abortFaultProperty } from "../../packages/runtime/test/abort-properties.ts";
+import { createDueOnAbortRuntime } from "../../fixtures/simulation/due-on-abort-runtime.ts";
+import { createLostAbortRuntime } from "../../fixtures/simulation/lost-abort-runtime.ts";
+import { createWrongTaskAbortRuntime } from "../../fixtures/simulation/wrong-task-abort-runtime.ts";
 import { createEarlyStartRuntime } from "../../fixtures/simulation/early-start-runtime.ts";
 import { createForgetfulRuntime } from "../../fixtures/simulation/forgetful-runtime.ts";
 import { createIdBlindRuntime } from "../../fixtures/simulation/id-blind-runtime.ts";
@@ -100,6 +104,30 @@ test("the delay property finds the runtime whose due phase ends the task without
 
 test("an outage after a crash finds the runtime that counts a delay from the handler's run", async () => {
 	const result = await fc.check(delayFaultProperty(createFromRunRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("an abort finds the runtime whose aborted task ends without its result", async () => {
+	const result = await fc.check(abortFaultProperty(createLostAbortRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("an abort of a sleeping task finds the runtime that records the delayed result instead", async () => {
+	const result = await fc.check(abortFaultProperty(createDueOnAbortRuntime));
+	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
+		failed: true,
+		reason: propertyVerdict,
+	});
+});
+
+test("two operations in flight find the runtime that aborts a task other than the one named", async () => {
+	const result = await fc.check(abortFaultProperty(createWrongTaskAbortRuntime));
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
 		reason: propertyVerdict,

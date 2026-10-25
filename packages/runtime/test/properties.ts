@@ -187,6 +187,7 @@ function scheduledHost(scheduler: fc.Scheduler, harness: Harness): NetInstanceHo
 		commit: (change, callContext) =>
 			scheduler.schedule(Promise.resolve(), "commit").then(() => harness.commit(change, callContext)),
 		snapshot: harness.snapshot.bind(harness),
+		abortTask: harness.abortTask.bind(harness),
 	};
 }
 

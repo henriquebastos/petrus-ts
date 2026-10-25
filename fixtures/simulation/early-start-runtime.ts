@@ -16,7 +16,7 @@ export function createEarlyStartRuntime(options: RuntimeOptions): Runtime {
 	const earlyStart: StartOperation = (tx, conversationId, operation, startedAt) => {
 		const handler = handlers.find((candidate) => candidate.transition.id === operation.transition);
 		// The early run only shows the defect; its result and its errors are dropped.
-		void handler?.run(operation.binding, { operationId: operation.id }).catch(() => undefined);
+		void handler?.run(operation.binding, { operationId: operation.id, signal: new AbortController().signal }).catch(() => undefined);
 		return start(tx, conversationId, operation, startedAt);
 	};
 	const parts: NetInstanceParts = { name: options.name, net, policy: options.policy, handlerIds, start: earlyStart };

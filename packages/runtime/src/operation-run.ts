@@ -1,9 +1,11 @@
 import type { Context, JsonValue } from "@earendil-works/chord";
-import type { Task, TaskRuntime } from "@earendil-works/pi-durable";
+import type { ConversationId, Cursor, Task, TaskId, TaskRuntime, Tx } from "@earendil-works/pi-durable";
 import { defineTask } from "@earendil-works/pi-durable";
+import type { TransitionId } from "@petrus/petri-net";
 import { transitionId } from "@petrus/petri-net";
 import { json } from "./net-instance-record.ts";
 import type { DelayedResult, Handler, HandlerResult } from "./handlers.ts";
+import { abortedVariant, declaresAborted } from "./handlers.ts";
 import type { NetInstanceParts, StartOperation } from "./net-instance-commit.ts";
 import { commitToNetInstance } from "./net-instance-commit.ts";
 import type { Operation } from "./operations.ts";
@@ -21,12 +23,15 @@ export type OperationRunParts = Omit<NetInstanceParts, "start"> & {
 };
 
 /**
- * How the operations of one net run: the Durable task kind that runs them, and the parts of the net's commits, whose
- * `start` creates a task of that kind.
+ * How the operations of one net run: the Durable task kind that runs them, the parts of the net's commits, whose
+ * `start` creates a task of that kind, and how to find the task of an operation.
  */
 export type OperationRun = {
 	readonly task: Task<OperationInput, Checkpoint, StoredResult, object>;
 	readonly parts: NetInstanceParts;
+	readonly taskOf: (tx: Tx, conversationId: ConversationId, operationId: string) => Promise<TaskId>;
+	/** True when the transition's handler declares the variant `aborted`, so its operations can be aborted. */
+	readonly abortable: (transition: TransitionId) => boolean;
 };
 
 /**
@@ -35,7 +40,8 @@ export type OperationRun = {
  * the net until it is quiet. For a delayed result, the task sleeps until the operation's start time plus the delay,
  * and its `due` phase makes that same commit. A throw in a phase is reported to the host; the task sleeps for
  * `retryDelayMs` and runs the phase again, as the operation is still in flight. After a crash Durable runs the phase
- * again, so a handler runs at least once and its result counts once.
+ * again, so a handler runs at least once and its result counts once. An aborted task whose transition declares the
+ * variant `aborted` records that result and steps, in the commit that ends the task.
  */
 export function createOperationRun(parts: OperationRunParts): OperationRun {
 	const start: StartOperation = (tx, conversationId, operation, startedAt) =>
@@ -46,7 +52,10 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 	async function run(input: Readonly<OperationInput>, taskRuntime: RunningTask, context: Context): Promise<void> {
 		const operation = operationOf(input);
 		await retried(taskRuntime, { phase: "run" }, context, async () => {
-			const answer = await handlerOf(operation).run(operation.binding, { operationId: operation.id });
+			const answer = await handlerOf(operation).run(operation.binding, {
+				operationId: operation.id,
+				signal: taskRuntime.signal,
+			});
 			if (!isDelayed(answer)) {
 				await complete(operation, answer, taskRuntime, context);
 				return;
@@ -107,6 +116,49 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 		}
 	}
 
+	/**
+	 * The commit that ends an aborted task. When the transition declares `aborted`, it records that result and steps
+	 * until quiet, so the net can give the tokens back. A throw here ends the task as faulted.
+	 */
+	async function aborted(operation: Operation, taskRuntime: RunningTask, context: Context): Promise<void> {
+		await taskRuntime.commit(async (tx) => {
+			if (abortable(operation.transition)) {
+				const at = taskRuntime.now();
+				const result = { variant: abortedVariant, value: null };
+				await commitToNetInstance(
+					tx,
+					taskRuntime.conversationId,
+					netInstanceParts,
+					(state) => admitResult(parts.net, parts.handlerIds, state, operation.id, result, at),
+					at,
+				);
+			}
+			return { status: "terminal", outcome: { status: "aborted" } };
+		}, context);
+	}
+
+	/**
+	 * The task of the operation `operationId` in the conversation, from Durable's task records, which it keeps after
+	 * the task ends. A started operation with no task is a bug, so it throws.
+	 */
+	async function taskOf(tx: Tx, conversationId: ConversationId, operationId: string): Promise<TaskId> {
+		let cursor: Cursor | undefined;
+		do {
+			const page = await tx.scanTasks({ conversationId, kind: task.definition.name }, 100, cursor);
+			const found = page.items.find((record) => isInputOf(record.input, operationId));
+			if (found !== undefined) {
+				return found.id;
+			}
+			cursor = page.next;
+		} while (cursor !== undefined);
+		throw new Error(`no task runs the operation ${operationId}`);
+	}
+
+	function abortable(transition: TransitionId): boolean {
+		const handler = handlers.get(transition);
+		return handler !== undefined && declaresAborted(handler.transition);
+	}
+
 	function handlerOf(operation: Operation): Handler {
 		const handler = handlers.get(operation.transition);
 		if (handler === undefined) {
@@ -123,10 +175,14 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 			run: (running, taskRuntime, context) => run(running.input, taskRuntime, context),
 			due: (running, taskRuntime, context) => due(running.input, running.state.checkpoint, taskRuntime, context),
 		},
-		abort: (_running, taskRuntime, context) =>
-			taskRuntime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context),
+		abort: (running, taskRuntime, context) => aborted(operationOf(running.input), taskRuntime, context),
 	});
-	return { task, parts: netInstanceParts };
+	return { task, parts: netInstanceParts, taskOf, abortable };
+}
+
+/** True when a stored task input is that of the operation `operationId`. */
+function isInputOf(input: JsonValue, operationId: string): boolean {
+	return typeof input === "object" && input !== null && !Array.isArray(input) && input.id === operationId;
 }
 
 function isDelayed(answer: HandlerResult | DelayedResult): answer is DelayedResult {

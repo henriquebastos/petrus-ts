@@ -1,3 +1,4 @@
+import type { Context } from "@earendil-works/chord";
 import type { Binding, ColourSet, Net, Place, PlaceId, Token, Transition, TransitionId } from "@petrus/petri-net";
 import { bindingProblems, placeId, tokenKey, transitionId } from "@petrus/petri-net";
 
@@ -31,8 +32,39 @@ export type HandlerTransition<V extends string = string> = Omit<Transition<V>, "
  */
 export type DelayedResult = { readonly delayMs: number; readonly result: HandlerResult };
 
-/** What a handler gets besides the binding. `operationId` names this run of the work (see `Operation`). */
-export type HandlerContext = { readonly operationId: string };
+/**
+ * What a handler gets besides the binding. `operationId` names this run of the work (see `Operation`). `signal`
+ * aborts when the host aborts the operation or the Harness closes: the handler then stops its work, as the abort
+ * waits until the run ends.
+ */
+export type HandlerContext = { readonly operationId: string; readonly signal: Signal };
+
+/**
+ * The standard `AbortSignal`. It is named through Chord's `Context`, because api-extractor cannot follow the global
+ * type that `@types/node` declares.
+ */
+export type Signal = NonNullable<Context["abortSignal"]>;
+
+/**
+ * The variant that an aborted operation ends with. A handler transition that declares it gets the result
+ * `{ variant: "aborted", value: null }` when the host aborts the operation, so its arcs can give the tokens back.
+ */
+export const abortedVariant = "aborted";
+
+/** True when the handler transition declares the variant `aborted`, so its operations can be aborted. */
+export function declaresAborted(transition: HandlerTransition): boolean {
+	return Object.hasOwn(transition.variants, abortedVariant);
+}
+
+/**
+ * Why the handler transitions break the handler rules: an `aborted` variant whose colour set does not hold `null`,
+ * the value of an aborted result. An empty list means none does.
+ */
+export function handlerProblems(transitions: readonly HandlerTransition[]): readonly string[] {
+	return transitions
+		.filter((transition) => transition.variants[abortedVariant]?.value.contains(null) === false)
+		.map((transition) => `${transition.id}: the colour set of the variant aborted must hold null`);
+}
 
 /**
  * A handler transition with the function that does its work outside the net. `run` returns an expected failure as a

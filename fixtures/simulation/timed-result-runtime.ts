@@ -27,7 +27,7 @@ export function createTimedResultRuntime(options: RuntimeOptions): Runtime {
 					const transition = transitionId(running.input.transition);
 					const handler = handlers.find((candidate) => candidate.transition.id === transition);
 					try {
-						const result = await handler!.run(binding, { operationId: id });
+						const result = await handler!.run(binding, { operationId: id, signal: taskRuntime.signal });
 						if ("delayMs" in result) {
 							throw new Error("this planted defect runs no delayed result");
 						}

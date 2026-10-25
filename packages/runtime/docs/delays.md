@@ -60,8 +60,9 @@ Each failure is reported to the host, and the phase runs again after `retryDelay
 
 - A delay counts from the start time. A handler cannot ask for an absolute time, such as a time of day, because it
   gets no clock.
-- An aborted sleeping task ends as `aborted`, as any aborted task, and its operation stays in flight. Test:
-  `test/delays.test.ts` "aborting a sleeping task ends it as aborted, and its result never counts".
+- An aborted sleeping task ends as `aborted`, and its delayed result never counts. Tests: `test/delays.test.ts`
+  "aborting a sleeping task ends it as aborted, and its result never counts"; with a variant `aborted`,
+  `test/aborts.test.ts` "aborting a sleeping operation records aborted, not its delayed result".
 - A sleep ends only in a running process with scheduling on (`harness.resume()`). Without the Harness option
   `onWake`, Durable arms a timer for the earliest sleep. With `onWake`, the host arms its own wakeup at the time
   that `harness.wake()` gives, and calls `resume()` then.

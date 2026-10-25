@@ -10,12 +10,12 @@ import type { ColourSet } from '@petrus/petri-net';
 import type { Context } from '@earendil-works/chord';
 import type { ConversationId } from '@earendil-works/pi-durable';
 import type { Extension } from '@earendil-works/pi-durable';
+import type { Harness } from '@earendil-works/pi-durable';
 import type { Marking } from '@petrus/petri-net';
 import type { Net } from '@petrus/petri-net';
 import type { Place } from '@petrus/petri-net';
 import type { PlaceId } from '@petrus/petri-net';
 import type { SelectionPolicy } from '@petrus/petri-net';
-import type { Session } from '@earendil-works/pi-durable';
 import type { Token } from '@petrus/petri-net';
 import type { Transition } from '@petrus/petri-net';
 import type { TransitionId } from '@petrus/petri-net';
@@ -58,6 +58,7 @@ export type Handler<V extends string = string> = {
 // @public
 export type HandlerContext = {
     readonly operationId: string;
+    readonly signal: Signal;
 };
 
 // @public
@@ -85,10 +86,11 @@ export type NetInstance = {
     readonly enqueue: (batch: Batch, context: Context) => Promise<Committed>;
     readonly state: (context: Context) => Promise<NetInstanceState>;
     readonly inFlight: (context: Context) => Promise<readonly Operation[]>;
+    readonly abort: (operationId: string, context: Context) => Promise<"marked" | "terminal">;
 };
 
 // @public
-export type NetInstanceHost = Pick<Session, "commit" | "snapshot">;
+export type NetInstanceHost = Pick<Harness, "commit" | "snapshot" | "abortTask">;
 
 // @public
 export type NetInstanceState = {
@@ -133,6 +135,9 @@ export type RuntimeOptions = {
     readonly handlers?: readonly Handler[];
     readonly retryDelayMs: number;
 };
+
+// @public
+export type Signal = NonNullable<Context["abortSignal"]>;
 
 // @public
 export type Variant<V extends string = string> = {
