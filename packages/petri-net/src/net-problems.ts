@@ -4,7 +4,8 @@ import { tokenKey } from "./token.ts";
 
 /**
  * Lists what makes a net unusable: an id used twice, an arc to a place that is not in the net, a variable that is
- * not declared or is on no input arc, or a variable whose colour set is not the colour set of a place it takes from.
+ * not declared or is on no variable input arc, or a variable whose colour set is not the colour set of a place it
+ * takes from.
  * An empty list means the net is well formed. A runtime refuses a net with problems.
  */
 export function netProblems(net: Net): readonly string[] {
@@ -53,11 +54,13 @@ type VariableUse = { readonly place: Place; readonly variable: string; readonly 
 function variableProblems(transition: Transition): readonly string[] {
 	const declared = new Map(Object.entries(transition.variables));
 	const uses = transition.inputs.flatMap((arc) =>
-		arc.variables.map((variable) => ({ place: arc.place, variable, colourSet: declared.get(variable) })),
+		arc.variables !== undefined
+			? arc.variables.map((variable) => ({ place: arc.place, variable, colourSet: declared.get(variable) }))
+			: [],
 	);
 	const unused = [...declared.keys()]
 		.filter((variable) => !uses.some((use) => use.variable === variable))
-		.map((variable) => `${transition.id}: variable ${variable} is on no input arc`);
+		.map((variable) => `${transition.id}: variable ${variable} is on no variable input arc`);
 	return [...unused, ...uses.flatMap((use) => useProblems(transition, use))];
 }
 

@@ -47,6 +47,13 @@ export type Err<TError> = {
 export function err<TError>(error: TError): Err<TError>;
 
 // @public
+export type ExpressionInputArc<V extends string = string> = {
+    readonly place: Place;
+    readonly expression: (binding: Binding<V>) => readonly Token[];
+    readonly variables?: never;
+};
+
+// @public
 export function fire(transition: Transition, binding: Binding, marking: Marking): Result<Marking, NotABinding | NotEnabled>;
 
 // @public
@@ -59,10 +66,7 @@ export type FiredStep = {
 export function fireStep(net: Net, marking: Marking, policy: SelectionPolicy): FiredStep;
 
 // @public
-export type InputArc<V extends string = string> = {
-    readonly place: Place;
-    readonly variables: readonly V[];
-};
+export type InputArc<V extends string = string> = VariableInputArc<V> | ExpressionInputArc<V>;
 
 // @public
 export type Marking = Readonly<Record<PlaceId, readonly Token[]>>;
@@ -106,6 +110,7 @@ export function ok<TValue>(value: TValue): Ok<TValue>;
 export type OutputArc<V extends string = string> = {
     readonly place: Place;
     readonly expression: (binding: Binding<V>) => readonly Token[];
+    readonly variables?: never;
 };
 
 // @public
@@ -164,6 +169,13 @@ export type TransitionId = string & {
 
 // @public
 export function transitionId(name: string): TransitionId;
+
+// @public
+export type VariableInputArc<V extends string = string> = {
+    readonly place: Place;
+    readonly variables: readonly V[];
+    readonly expression?: never;
+};
 
 // (No @packageDocumentation comment for this package)
 

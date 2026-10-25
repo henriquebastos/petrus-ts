@@ -53,9 +53,9 @@ order of work and a crash at any commit".
 `k` eats with fork `k` on the left and fork `k + 1` (round the table) on the right, so no two neighbours may eat
 at once (EWD 310). Each token on `hungry` is one meal that a philosopher still wants.
 
-- `eat` is a handler transition that takes a hungry philosopher and both of its forks in one firing; its guard
-  checks that the forks are that philosopher's. Its work is the meal, and its variant `ate` puts the philosopher
-  on `fed` and gives both forks back.
+- `eat` is a handler transition that takes a hungry philosopher and both of its forks in one firing. Its
+  expression input arc computes the two forks from the philosopher's seat, so a binding chooses only the
+  philosopher. Its work is the meal, and its variant `ate` puts the philosopher on `fed` and gives both forks back.
 
 So the forks are held for the whole meal, and philosophers who are not neighbours eat in the same step. At every
 commit each fork is on `forks` or held by one meal on `eat:busy`, so no two neighbours eat at once. No one holds
@@ -63,6 +63,10 @@ one fork and waits for the other, so the net never stops while a philosopher is 
 `test/dining-philosophers.test.ts` "lets philosophers who are not neighbours eat in the same step, and gives
 every fork back" and "never lets two neighbours eat at once and leaves no one hungry, under any order of meals and
 a crash at any commit".
+
+One `enabledBindings` call computes the forks once for each distinct hungry philosopher.
+Test: `test/dining-philosophers.test.ts` "computes the forks once for each distinct hungry philosopher in one
+enabledBindings call".
 
 ## 4 Simple protocol
 

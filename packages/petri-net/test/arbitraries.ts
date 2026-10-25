@@ -4,6 +4,7 @@ import { Value } from "typebox/value";
 import type {
 	Binding,
 	ColourSet,
+	ExpressionInputArc,
 	Marking,
 	Net,
 	OutputArc,
@@ -12,6 +13,7 @@ import type {
 	SelectionPolicy,
 	Token,
 	Transition,
+	VariableInputArc,
 } from "../src/index.ts";
 import { definitionOrder, placeId, tokensAt, transitionId } from "../src/index.ts";
 
@@ -90,17 +92,27 @@ const expressions: readonly OutputArc["expression"][] = [
 
 const placeArbitrary = fc.constantFrom(...places);
 
-/** A transition whose variables are exactly the variables on its input arcs, all of colour set Value. */
+const variableArcArbitrary: fc.Arbitrary<VariableInputArc> = fc.record({
+	place: placeArbitrary,
+	variables: fc.array(fc.constantFrom(...variableNames), { minLength: 1, maxLength: 2 }),
+});
+
+/** The output expressions serve as input expressions too: each gives tokens of the colour set for a binding. */
+const expressionArcArbitrary: fc.Arbitrary<ExpressionInputArc> = fc.record({
+	place: placeArbitrary,
+	expression: fc.constantFrom(...expressions),
+});
+
+/**
+ * A transition whose variables are exactly the variables on its variable input arcs, all of colour set Value.
+ * Some input arcs compute their tokens from the binding instead.
+ */
 export const transitionArbitrary: fc.Arbitrary<Transition> = fc
 	.record({
 		id: fc.constantFrom("t1", "t2", "t3").map(transitionId),
-		inputs: fc.array(
-			fc.record({
-				place: placeArbitrary,
-				variables: fc.array(fc.constantFrom(...variableNames), { minLength: 1, maxLength: 2 }),
-			}),
-			{ maxLength: 3 },
-		),
+		inputs: fc.array(fc.oneof({ arbitrary: variableArcArbitrary, weight: 3 }, expressionArcArbitrary), {
+			maxLength: 3,
+		}),
 		guard: fc.constantFrom(...guards),
 		outputs: fc.array(fc.record({ place: placeArbitrary, expression: fc.constantFrom(...expressions) }), {
 			maxLength: 3,
@@ -110,14 +122,14 @@ export const transitionArbitrary: fc.Arbitrary<Transition> = fc
 		...transition,
 		variables: Object.fromEntries(
 			variableNames
-				.filter((name) => transition.inputs.some((arc) => arc.variables.includes(name)))
+				.filter((name) => transition.inputs.some((arc) => arc.variables?.includes(name) === true))
 				.map((name) => [name, valueColourSet]),
 		),
 	}));
 
 /**
- * How a test picks a binding. For each variable an index picks a token from the variable's first input place;
- * an index past the end takes the fallback value instead. The shape sometimes drops a variable or adds one.
+ * How a test picks a binding. For each variable an index picks a token from the place of its first variable input
+ * arc; an index past the end takes the fallback value instead. The shape sometimes drops a variable or adds one.
  */
 export type Choice = {
 	readonly indices: readonly number[];
@@ -138,7 +150,7 @@ export function chooseBinding(
 	choice: Choice,
 ): Binding {
 	const values = Object.keys(transition.variables).map((name, index): [string, Token] => {
-		const arc = transition.inputs.find((input) => input.variables.includes(name));
+		const arc = transition.inputs.find((input) => input.variables?.includes(name) === true);
 		const candidates = arc === undefined ? [] : tokensOf(arc.place.id);
 		return [name, candidates[choice.indices[index] ?? 0] ?? choice.fallbacks[index] ?? null];
 	});

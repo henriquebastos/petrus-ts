@@ -1,6 +1,6 @@
 import fc from "fast-check";
-import type { Marking, Token } from "@petrus/petri-net";
-import { definitionOrder, tokenKey, tokensAt, transitionId } from "@petrus/petri-net";
+import type { InputArc, Marking, Token, Transition } from "@petrus/petri-net";
+import { definitionOrder, enabledBindings, tokenKey, tokensAt, transitionId } from "@petrus/petri-net";
 import type { Runtime } from "@petrus/runtime";
 import { busyPlaceId, createRuntime } from "@petrus/runtime";
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -93,7 +93,10 @@ function bound(binding: Token, variable: string): Token {
 function eachForkOnce(marking: Marking, size: number): boolean {
 	const all = [
 		...tokensAt(marking, forks.id),
-		...tokensAt(marking, eating).flatMap((binding) => [bound(binding, "left"), bound(binding, "right")]),
+		...tokensAt(marking, eating).flatMap((binding) => {
+			const diner = seat(bound(binding, "philosopher"));
+			return [leftFork(diner), leftFork((diner + 1) % size)];
+		}),
 	];
 	return sortedKeys(all) === sortedKeys(Array.from({ length: size }, (_, index) => leftFork(index)));
 }
@@ -102,7 +105,40 @@ function diners(marking: Marking): readonly Token[] {
 	return tokensAt(marking, eating).map((binding) => bound(binding, "philosopher"));
 }
 
+/** The `eat` transition of a table of `size`, whose forks arc records the philosopher of each run. */
+function countedEat(size: number, computed: Token[]): Transition {
+	const [meal] = diningPhilosophersHandlers(
+		size,
+		sharedTable(size, () => Promise.resolve()),
+	);
+	if (meal === undefined) {
+		throw new Error("the table has no eat handler");
+	}
+	const inputs = meal.transition.inputs.map((arc): InputArc => {
+		if (arc.variables !== undefined) {
+			return arc;
+		}
+		return {
+			place: arc.place,
+			expression: (binding) => {
+				computed.push(binding.philosopher ?? null);
+				return arc.expression(binding);
+			},
+		};
+	});
+	return { ...meal.transition, inputs, outputs: [] };
+}
+
 describe("dining philosophers", () => {
+	test("computes the forks once for each distinct hungry philosopher in one enabledBindings call", () => {
+		const size = 40;
+		const seats = Array.from({ length: size }, (_, index) => `p${String(index)}`);
+		const computed: Token[] = [];
+		const enabled = enabledBindings(countedEat(size, computed), initialMarking(size, [...seats, "p7", "p0", "p7"]));
+		expect(enabled).toStrictEqual(seats.map((diner) => ({ philosopher: diner })));
+		expect(computed).toStrictEqual(seats);
+	});
+
 	test("lets philosophers who are not neighbours eat in the same step, and gives every fork back", async () => {
 		const meals = ["p0", "p1", "p2", "p3", "p4"];
 		const disk = createDisk();

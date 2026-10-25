@@ -5,7 +5,17 @@ export type { PlaceId, TransitionId } from "./ids.ts";
 export { placeId, transitionId } from "./ids.ts";
 export type { Marking } from "./marking.ts";
 export { addTokens, emptyMarking, removeTokens, tokensAt } from "./marking.ts";
-export type { Binding, ColourSet, InputArc, Net, OutputArc, Place, Transition } from "./net.ts";
+export type {
+	Binding,
+	ColourSet,
+	ExpressionInputArc,
+	InputArc,
+	Net,
+	OutputArc,
+	Place,
+	Transition,
+	VariableInputArc,
+} from "./net.ts";
 export { markingProblems, netProblems } from "./net-problems.ts";
 export type { Err, Ok, Result } from "./result.ts";
 export { err, ok } from "./result.ts";

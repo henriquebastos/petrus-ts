@@ -28,12 +28,16 @@ function count(tokens: readonly Token[], token: Token): number {
 	return tokens.filter((candidate) => canonical(candidate) === canonical(token)).length;
 }
 
-/** The tokens each input place must give, in arc order. */
+/** The tokens each input place must give, in arc order: a variable arc's values, or an expression arc's result. */
 function modelDemand(transition: Transition, binding: Binding): ReadonlyMap<PlaceId, readonly Token[]> {
 	const demand = new Map<PlaceId, Token[]>();
 	for (const arc of transition.inputs) {
 		const taken = demand.get(arc.place.id) ?? [];
-		taken.push(...arc.variables.map((variable) => binding[variable] ?? null));
+		if (arc.variables !== undefined) {
+			taken.push(...arc.variables.map((variable) => binding[variable] ?? null));
+		} else {
+			taken.push(...arc.expression(binding));
+		}
 		demand.set(arc.place.id, taken);
 	}
 	return demand;

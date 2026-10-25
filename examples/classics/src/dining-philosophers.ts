@@ -5,8 +5,9 @@ import type { Handler, HandlerTransition } from "@petrus/runtime";
 /**
  * Philosophers round a table with one fork between each two plates. Philosopher k eats with fork k on the left and
  * fork k + 1 (round the table) on the right, so neighbours share a fork and cannot eat at once. `eat` takes both
- * forks in one firing, so no philosopher holds one fork and waits for the other. The meal is the handler's work,
- * so the forks are held for the whole meal.
+ * forks in one firing, so no philosopher holds one fork and waits for the other. Its arc from `forks` computes the
+ * two forks from the philosopher, so a binding chooses only the philosopher. The meal is the handler's work, so the
+ * forks are held for the whole meal.
  */
 const philosopher: ColourSet = {
 	name: "Philosopher",
@@ -33,23 +34,27 @@ function rightFork(seatNumber: number, size: number): string {
 	return `f${String((seatNumber + 1) % size)}`;
 }
 
+/** The two forks of a philosopher at a table of `size`: the left one, then the right one. */
+function forksOf(diner: Token, size: number): readonly Token[] {
+	return [leftFork(seat(diner)), rightFork(seat(diner), size)];
+}
+
 /** The meal of one philosopher at a table of `size`. It holds both of that philosopher's forks. */
-function eat(size: number): HandlerTransition<"philosopher" | "left" | "right"> {
+function eat(size: number): HandlerTransition<"philosopher"> {
 	return {
 		id: transitionId("eat"),
-		variables: { philosopher, left: fork, right: fork },
-		guard: ({ philosopher: diner, left, right }) =>
-			left === leftFork(seat(diner)) && right === rightFork(seat(diner), size),
+		variables: { philosopher },
+		guard: () => true,
 		inputs: [
 			{ place: hungry, variables: ["philosopher"] },
-			{ place: forks, variables: ["left", "right"] },
+			{ place: forks, expression: ({ philosopher: diner }) => forksOf(diner, size) },
 		],
 		variants: {
 			ate: {
 				value: philosopher,
 				outputs: [
 					{ place: fed, expression: ({ philosopher: diner }) => [diner] },
-					{ place: forks, expression: ({ left, right }) => [left, right] },
+					{ place: forks, expression: ({ philosopher: diner }) => forksOf(diner, size) },
 				],
 			},
 		},
@@ -68,7 +73,7 @@ export function initialMarking(size: number, meals: readonly Token[]): Marking {
 export type Table = { readonly eat: (philosopher: Token, operationId: string) => Promise<void> };
 
 export function diningPhilosophersHandlers(size: number, table: Table): readonly Handler[] {
-	const meal: Handler<"philosopher" | "left" | "right"> = {
+	const meal: Handler<"philosopher"> = {
 		transition: eat(size),
 		run: async (binding, { operationId }) => {
 			await table.eat(binding.philosopher, operationId);

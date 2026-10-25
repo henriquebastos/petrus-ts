@@ -2,7 +2,7 @@ import { bindingProblems, valueOf } from "./binding.ts";
 import type { PlaceId, TransitionId } from "./ids.ts";
 import type { Marking } from "./marking.ts";
 import { addTokens, removeTokens, tokensAt } from "./marking.ts";
-import type { Binding, OutputArc, Transition } from "./net.ts";
+import type { Binding, ExpressionInputArc, InputArc, OutputArc, Transition } from "./net.ts";
 import type { Result } from "./result.ts";
 import { err, ok } from "./result.ts";
 import type { Token } from "./token.ts";
@@ -27,8 +27,9 @@ export type NotEnabled = {
 
 /**
  * Every enabled binding of `transition` in `marking`, each once. A variable takes its candidate values from the
- * places of the input arcs that list it. The order is fixed: variables in declaration order, then values in the
- * order of those arcs and, within a place, in arrival order. The transition must come from a net with no problems
+ * places of the variable input arcs that list it. The order is fixed: variables in declaration order, then values in
+ * the order of those arcs and, within a place, in arrival order. An expression input arc's token outside its place's
+ * colour set is a bug in the net, so it throws a TypeError. The transition must come from a net with no problems
  * (see `netProblems`).
  */
 export function enabledBindings(transition: Transition, marking: Marking): readonly Binding[] {
@@ -46,8 +47,8 @@ export function enabledBindings(transition: Transition, marking: Marking): reado
 /**
  * Fires the binding element (transition, binding): removes the tokens the input arcs take and adds the tokens the
  * output arcs give. It returns `not-a-binding` or `not-enabled` instead when the binding cannot fire.
- * An output token outside its place's colour set is a bug in the net, so it throws a TypeError. The transition must
- * come from a net with no problems (see `netProblems`).
+ * An arc expression's token outside its place's colour set is a bug in the net, so it throws a TypeError. The
+ * transition must come from a net with no problems (see `netProblems`).
  */
 export function fire(
 	transition: Transition,
@@ -72,12 +73,15 @@ export function consume(transition: Transition, binding: Binding, marking: Marki
 /** Adds the tokens that the output arcs give, after the tokens already on each place. */
 export function produce(transition: Transition, binding: Binding, marking: Marking): Marking {
 	return transition.outputs.reduce(
-		(next, arc) => addTokens(next, arc.place.id, produced(transition, arc, binding)),
+		(next, arc) => addTokens(next, arc.place.id, expressionTokens(transition, "output", arc, binding)),
 		marking,
 	);
 }
 
-/** Why the binding element cannot fire, or `undefined` when it is enabled. */
+/**
+ * Why the binding element cannot fire, or `undefined` when it is enabled. The expression input arcs run only after
+ * the binding has no problems.
+ */
 export function whyNot(
 	transition: Transition,
 	binding: Binding,
@@ -96,7 +100,7 @@ export function whyNot(
 function candidates(transition: Transition, marking: Marking, variable: string): readonly Token[] {
 	return distinctTokens(
 		transition.inputs
-			.filter((arc) => arc.variables.includes(variable))
+			.filter((arc) => arc.variables?.includes(variable) === true)
 			.flatMap((arc) => tokensAt(marking, arc.place.id)),
 	);
 }
@@ -105,18 +109,29 @@ function candidates(transition: Transition, marking: Marking, variable: string):
 function demandByPlace(transition: Transition, binding: Binding): ReadonlyMap<PlaceId, readonly Token[]> {
 	const demand = new Map<PlaceId, readonly Token[]>();
 	for (const arc of transition.inputs) {
-		const wanted = arc.variables.map((variable) => valueOf(binding, variable));
-		demand.set(arc.place.id, [...(demand.get(arc.place.id) ?? []), ...wanted]);
+		demand.set(arc.place.id, [...(demand.get(arc.place.id) ?? []), ...taken(transition, arc, binding)]);
 	}
 	return demand;
 }
 
-function produced(transition: Transition, arc: OutputArc, binding: Binding): readonly Token[] {
+function taken(transition: Transition, arc: InputArc, binding: Binding): readonly Token[] {
+	return arc.variables !== undefined
+		? arc.variables.map((variable) => valueOf(binding, variable))
+		: expressionTokens(transition, "input", arc, binding);
+}
+
+/** The tokens of an input or output arc expression. A token outside the place's colour set is a bug in the net. */
+function expressionTokens(
+	transition: Transition,
+	side: "input" | "output",
+	arc: ExpressionInputArc | OutputArc,
+	binding: Binding,
+): readonly Token[] {
 	const tokens = arc.expression(binding);
 	const outside = tokens.filter((token) => !arc.place.colourSet.contains(token));
 	if (outside.length > 0) {
 		throw new TypeError(
-			`${transition.id}: output ${outside.map(tokenKey).join(", ")} on ${arc.place.id} is not in ${arc.place.colourSet.name}`,
+			`${transition.id}: ${side} ${outside.map(tokenKey).join(", ")} on ${arc.place.id} is not in ${arc.place.colourSet.name}`,
 		);
 	}
 	return tokens;

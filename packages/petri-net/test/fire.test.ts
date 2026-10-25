@@ -2,7 +2,7 @@ import { fc, test } from "@fast-check/vitest";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { describe, expect, vi } from "vitest";
-import type { ColourSet, Place, Transition } from "../src/index.ts";
+import type { ColourSet, InputArc, Place, Transition } from "../src/index.ts";
 import { enabledBindings, fire, placeId, transitionId } from "../src/index.ts";
 import { canonical, countTokens, firingArbitrary } from "./arbitraries.ts";
 
@@ -27,6 +27,18 @@ const answer: Transition<"c" | "r"> = {
 		{ place: replies, expression: ({ c }) => [c] },
 		{ place: resource, expression: ({ r }) => [r] },
 	],
+};
+
+/** Answers a comment while it holds the resource token of the comment's pull request, which an arc computes. */
+const answerOwnPr: Transition<"c"> = {
+	id: transitionId("answer"),
+	variables: { c: comment },
+	guard: () => true,
+	inputs: [
+		{ place: comments, variables: ["c"] },
+		{ place: resource, expression: ({ c }) => (Value.Check(commentSchema, c) ? [c.pr] : []) },
+	],
+	outputs: [{ place: replies, expression: ({ c }) => [c] }],
 };
 
 const ana = { author: "ana", pr: "pr-1" };
@@ -122,6 +134,108 @@ describe("fire, examples", () => {
 	});
 });
 
+describe("expression input arcs, examples", () => {
+	test("takes the tokens that an expression input arc computes, and is enabled only when they are there", () => {
+		const marking = { [comments.id]: [ana, bob], [resource.id]: ["pr-1"] };
+		expect(enabledBindings(answerOwnPr, marking)).toStrictEqual([{ c: ana }]);
+		expect(fire(answerOwnPr, { c: ana }, marking)).toStrictEqual({
+			ok: true,
+			value: { [comments.id]: [bob], [replies.id]: [ana] },
+		});
+		expect(fire(answerOwnPr, { c: bob }, marking)).toStrictEqual({
+			ok: false,
+			error: {
+				kind: "not-enabled",
+				transition: answerOwnPr.id,
+				shortfalls: [{ place: resource.id, missing: ["pr-2"] }],
+			},
+		});
+	});
+
+	test("adds the tokens of an expression input arc to the tokens of a variable arc from the same place", () => {
+		const twice: Transition<"r"> = {
+			id: transitionId("twice"),
+			variables: { r: pr },
+			guard: () => true,
+			inputs: [
+				{ place: resource, expression: ({ r }) => [r] },
+				{ place: resource, variables: ["r"] },
+			],
+			outputs: [],
+		};
+		expect(enabledBindings(twice, { [resource.id]: ["pr-1", "pr-2"] })).toStrictEqual([]);
+		expect(fire(twice, { r: "pr-1" }, { [resource.id]: ["pr-1", "pr-2"] })).toStrictEqual({
+			ok: false,
+			error: { kind: "not-enabled", transition: twice.id, shortfalls: [{ place: resource.id, missing: ["pr-1"] }] },
+		});
+		const marking = { [resource.id]: ["pr-1", "pr-2", "pr-1"] };
+		expect(enabledBindings(twice, marking)).toStrictEqual([{ r: "pr-1" }]);
+		expect(fire(twice, { r: "pr-1" }, marking)).toStrictEqual({ ok: true, value: { [resource.id]: ["pr-2"] } });
+	});
+
+	test("an input arc lists variables or computes its tokens, and not both", () => {
+		const variables: readonly "r"[] = ["r"];
+		const both = { place: resource, variables, expression: () => [] };
+		// @ts-expect-error -- an arc with a list of variables has no expression, so the expression is not ignored.
+		const arc: InputArc<"r"> = both;
+		expect(arc.variables).toStrictEqual(["r"]);
+	});
+
+	test("takes a variable's values only from variable input arcs, in their order", () => {
+		const other: Place = { id: placeId("other"), colourSet: pr };
+		const expression = vi.fn(() => []);
+		const after: Transition<"r"> = {
+			id: transitionId("after"),
+			variables: { r: pr },
+			guard: () => true,
+			inputs: [
+				{ place: other, expression },
+				{ place: resource, variables: ["r"] },
+			],
+			outputs: [],
+		};
+		const marking = { [other.id]: ["pr-3", "pr-2"], [resource.id]: ["pr-1", "pr-2"] };
+		expect(enabledBindings(after, marking)).toStrictEqual([{ r: "pr-1" }, { r: "pr-2" }]);
+		expect(expression.mock.calls).toStrictEqual([[{ r: "pr-1" }], [{ r: "pr-2" }]]);
+	});
+
+	test("runs an expression input arc only for right values and a true guard", () => {
+		const expression = vi.fn(() => ["pr-1"]);
+		const guarded: Transition<"c"> = {
+			...answerOwnPr,
+			guard: ({ c }) => c !== null,
+			inputs: [
+				{ place: comments, variables: ["c"] },
+				{ place: resource, expression },
+			],
+		};
+		expect(fire(guarded, { c: 7 }, {}).ok).toBe(false);
+		expect(fire(guarded, {}, {}).ok).toBe(false);
+		expect(fire({ ...guarded, guard: () => false }, { c: ana }, { [comments.id]: [ana] }).ok).toBe(false);
+		expect(enabledBindings({ ...guarded, guard: () => false }, { [comments.id]: [ana] })).toStrictEqual([]);
+		expect(expression).not.toHaveBeenCalled();
+		expect(enabledBindings(guarded, { [comments.id]: [ana, bob, ana], [resource.id]: ["pr-1"] })).toStrictEqual([
+			{ c: ana },
+			{ c: bob },
+		]);
+		expect(expression).toHaveBeenCalledTimes(2);
+	});
+
+	test("throws a TypeError for an input token outside its place's colour set, a bug in the net", () => {
+		const broken: Transition<"c"> = {
+			...answerOwnPr,
+			inputs: [
+				{ place: comments, variables: ["c"] },
+				{ place: resource, expression: () => [7, "pr-1", null] },
+			],
+		};
+		const marking = { [comments.id]: [ana], [resource.id]: ["pr-1"] };
+		const error = new TypeError("answer: input 7, null on resource is not in Pr");
+		expect(() => fire(broken, { c: ana }, marking)).toThrow(error);
+		expect(() => enabledBindings(broken, marking)).toThrow(error);
+	});
+});
+
 describe("enabledBindings, examples", () => {
 	test("lists each enabled binding once: variables in declaration order, values in arrival order", () => {
 		const marking = { [comments.id]: [bob, ana, bob], [resource.id]: ["pr-1", "pr-2"] };
@@ -191,7 +305,10 @@ describe("fire, properties", () => {
 	test.prop([firingArbitrary])("moves exactly the tokens of the arcs", ({ transition, binding, marking }) => {
 		const fired = fire(transition, binding, marking);
 		fc.pre(fired.ok);
-		const taken = transition.inputs.reduce((sum, arc) => sum + arc.variables.length, 0);
+		const taken = transition.inputs.reduce(
+			(sum, arc) => sum + (arc.variables !== undefined ? arc.variables.length : arc.expression(binding).length),
+			0,
+		);
 		const given = transition.outputs.reduce((sum, arc) => sum + arc.expression(binding).length, 0);
 		expect(countTokens(fired.value)).toBe(countTokens(marking) - taken + given);
 	});

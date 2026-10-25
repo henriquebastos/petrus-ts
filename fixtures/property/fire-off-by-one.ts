@@ -28,7 +28,8 @@ export function fireOffByOne(
 	}
 	const demand = new Map<PlaceId, Token[]>();
 	for (const arc of transition.inputs) {
-		demand.set(arc.place.id, [...(demand.get(arc.place.id) ?? []), ...arc.variables.map((name) => binding[name] ?? null)]);
+		const taken = arc.variables !== undefined ? arc.variables.map((name) => binding[name] ?? null) : arc.expression(binding);
+		demand.set(arc.place.id, [...(demand.get(arc.place.id) ?? []), ...taken]);
 	}
 	const shortfalls = [...demand]
 		.filter(([place, wanted]) => wanted.some((token) => count(tokensAt(marking, place), token) <= count(wanted, token)))

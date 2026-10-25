@@ -34,5 +34,7 @@ if (fired.ok) {
 `fireStep(net, marking, definitionOrder)` selects and fires a whole step: every enabled binding element, in the
 policy's order, whose tokens are still free.
 
-- [docs/spec.md](docs/spec.md): terms, invariants and failures, each with the test that proves it.
+- [docs/spec.md](docs/spec.md): tokens, arcs, bindings and firing: terms, invariants and failures, each with the
+  test that proves it.
+- [docs/steps.md](docs/steps.md): steps, selection policies and allocation, in the same form.
 - [api/petri-net.api.md](api/petri-net.api.md): the public signatures. `pnpm lint:api` keeps it current.

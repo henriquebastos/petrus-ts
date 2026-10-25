@@ -39,7 +39,7 @@ describe("netProblems", () => {
 		]);
 	});
 
-	test("reports a variable that is undeclared, on no input arc, or of another colour set than its place", () => {
+	test("reports a variable that is undeclared, on no variable input arc, or of another colour set than its place", () => {
 		const wrong: Transition = {
 			id: transitionId("wrong"),
 			variables: { x: number, unused: number, y: number },
@@ -51,9 +51,28 @@ describe("netProblems", () => {
 			outputs: [],
 		};
 		expect(netProblems({ places: [a, b], transitions: [wrong] })).toStrictEqual([
-			"wrong: variable unused is on no input arc",
+			"wrong: variable unused is on no variable input arc",
 			"wrong: variable ghost on a is not declared",
 			"wrong: variable y has colour set Number, place b has Text",
+		]);
+	});
+
+	test("checks variables on variable input arcs only, and checks the place of an expression input arc", () => {
+		const elsewhere: Place = { id: placeId("elsewhere"), colourSet: number };
+		const computed: Transition<"x" | "y"> = {
+			id: transitionId("computed"),
+			variables: { x: number, y: number },
+			guard: () => true,
+			inputs: [
+				{ place: a, variables: ["x"] },
+				{ place: b, expression: ({ x, y }) => [x, y] },
+				{ place: elsewhere, expression: () => [] },
+			],
+			outputs: [],
+		};
+		expect(netProblems({ places: [a, b], transitions: [computed] })).toStrictEqual([
+			"computed: place elsewhere is not in the net",
+			"computed: variable y is on no variable input arc",
 		]);
 	});
 });

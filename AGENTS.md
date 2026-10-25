@@ -5,6 +5,7 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 | Topic                                                 | Read                                                                                         |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Colour sets, bindings, markings, firing, validation   | `packages/petri-net/docs/spec.md`                                                            |
+| Steps of a net, selection policies, allocation        | `packages/petri-net/docs/steps.md`                                                           |
 | Enqueues, commits, steps, crashes, concurrency        | `packages/runtime/docs/spec.md`                                                              |
 | Handler transitions, operations, handler tasks        | `packages/runtime/docs/handlers.md`                                                          |
 | A host app: request ids, the edge, a Harness, storage | `examples/comment-replies/README.md`                                                         |

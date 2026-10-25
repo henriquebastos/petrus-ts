@@ -15,18 +15,41 @@ export type Place = { readonly id: PlaceId; readonly colourSet: ColourSet };
 export type Binding<V extends string = string> = Readonly<Record<V, Token>>;
 
 /**
- * An input arc's expression is a list of the transition's variables. The arc takes one token for each entry:
- * the value the binding gives that variable. `["x", "x"]` takes two equal tokens.
+ * An input arc whose expression is a list of the transition's variables. The arc takes one token for each entry:
+ * the value the binding gives that variable. `["x", "x"]` takes two equal tokens. Variables take their values only
+ * from the places of these arcs.
  */
-export type InputArc<V extends string = string> = { readonly place: Place; readonly variables: readonly V[] };
+export type VariableInputArc<V extends string = string> = {
+	readonly place: Place;
+	readonly variables: readonly V[];
+	/** Not on this arc: an arc with both lists and an expression does not compile. */
+	readonly expression?: never;
+};
+
+/**
+ * An input arc whose expression returns, for a binding, the tokens that the arc takes from its place. It runs only
+ * for a binding whose values are right and whose guard is true, so a guard can protect it. It must be pure and
+ * deterministic, as an output arc's expression.
+ */
+export type ExpressionInputArc<V extends string = string> = {
+	readonly place: Place;
+	readonly expression: (binding: Binding<V>) => readonly Token[];
+	/** Not on this arc: an arc with both lists and an expression does not compile. */
+	readonly variables?: never;
+};
+
+/** An input arc lists variables or computes its tokens from the binding. */
+export type InputArc<V extends string = string> = VariableInputArc<V> | ExpressionInputArc<V>;
 
 /** An output arc's expression returns, for a binding, the tokens that the arc puts on its place. */
 export type OutputArc<V extends string = string> = {
 	readonly place: Place;
 	readonly expression: (binding: Binding<V>) => readonly Token[];
+	/** Not on this arc: an arc with both lists and an expression does not compile. */
+	readonly variables?: never;
 };
 
-/** A transition of a coloured net. `V` names its variables; each one occurs on an input arc. */
+/** A transition of a coloured net. `V` names its variables; each one occurs on a variable input arc. */
 export type Transition<V extends string = string> = {
 	readonly id: TransitionId;
 	/** Each variable with its colour set. A variable's colour set is the colour set of each place it takes from. */
