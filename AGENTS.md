@@ -10,6 +10,7 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 | Handler transitions, operations, handler tasks        | `packages/runtime/docs/handlers.md`                                                          |
 | A host app: request ids, the edge, a Harness, storage | `examples/comment-replies/README.md`                                                         |
 | Classical nets with handlers and their invariants     | `examples/classics/README.md`                                                                |
+| Scale runs, count budgets                             | `examples/classics/docs/scale.md`                                                            |
 | Code style                                            | `docs/style-guide.md`                                                                        |
 | A lint, type, dependency or test gate                 | the config file and its comments, the gate test in `test/gates/`, its fixture in `fixtures/` |
 

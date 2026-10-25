@@ -37,6 +37,7 @@ pnpm test          # unit and property tests with coverage
 pnpm test:gates    # planted defects: each gate must still fail on its fixture
 pnpm inspect       # tests, then Fallow CRAP and clones on the changed files; the pre-push hook runs it
 pnpm periodic      # Stryker mutation testing, report in reports/mutation/; the pre-push hook runs it
+pnpm scale         # time two classical nets at larger sizes (examples/classics/docs/scale.md); not in feedback
 pnpm format        # format code with Biome and fix Markdown with markdownlint
 ```
 

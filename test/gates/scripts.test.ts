@@ -17,6 +17,7 @@ const scriptNames = [
 	"lint:md",
 	"periodic",
 	"prepare",
+	"scale",
 	"test",
 	"test:gates",
 	"typecheck",

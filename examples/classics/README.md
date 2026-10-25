@@ -2,12 +2,13 @@
 
 Small nets from the literature on concurrency, run with handler transitions (see
 [packages/runtime/docs/handlers.md](../../packages/runtime/docs/handlers.md)). Each one checks the handlers
-against an invariant that the net is known for. The problems are from E. W. Dijkstra, "Cooperating sequential
+against an invariant the net is known for. The problems are from E. W. Dijkstra, "Cooperating sequential
 processes" (EWD 123, 1965), and "Hierarchical ordering of sequential processes" (EWD 310, 1971) for the dining
 philosophers. The simple protocol is from K. Jensen, L. M. Kristensen and L. Wells, "Coloured Petri Nets and CPN
 Tools for modelling and validation of concurrent systems" (STTT 9, 2007), section 2, with the retransmission
 delay of its timed form in Fig. 14. The nets are their usual Petri-net forms, with each piece of outside work
-as a handler. [docs/order-process.md](docs/order-process.md) adds a workflow net with cancellation.
+as a handler. [docs/order-process.md](docs/order-process.md) adds a workflow net with cancellation;
+[docs/scale.md](docs/scale.md) has scale runs and count budgets.
 
 Each net is a file in `src/` with its handlers over a port to the outside service. Its test in `test/` runs it
 with a fake service and a fast-check scheduler that ends the work in any order. The runtime runs on Pi Durable:
@@ -51,7 +52,7 @@ order of work and a crash at any commit".
 
 `src/dining-philosophers.ts`. Philosophers sit round a table with one fork between each two plates. Philosopher
 `k` eats with fork `k` on the left and fork `k + 1` (round the table) on the right, so no two neighbours may eat
-at once (EWD 310). Each token on `hungry` is one meal that a philosopher still wants.
+at once (EWD 310). Each token on `hungry` is one meal a philosopher still wants.
 
 - `eat` is a handler transition that takes a hungry philosopher and both of its forks in one firing. Its
   expression input arc computes the two forks from the philosopher's seat, so a binding chooses only the
@@ -83,7 +84,7 @@ the place `Sent` and the handler transition `Wait` are added for the timer.
 - `Wait` is a handler transition, the retransmission timer. It takes the sent packet from `Sent`. Its handler
   returns the result `elapsed` with a delay, so the result counts a fixed wait after `SendPacket` fired; then
   `elapsed` puts the packet back on `PacketsToSend`. This is the delay `@+Wait` on that arc in the paper's timed
-  net. The wait is a Durable sleep, so it survives a crash. The paper's other delays are the time that the
+  net. The wait is a Durable sleep, so it survives a crash. The paper's other delays are the time the
   handlers' work takes.
 
 At every commit `DataReceived` is the data of the packets before `NextRec`, so the receiver gets the data once
@@ -109,7 +110,7 @@ it allows this.
   [aborts.md](../../packages/runtime/docs/aborts.md)). A process that never leaves holds the resource token for ever.
 - A philosopher can starve. EWD 310 says that taking both forks at once leaves "a particular philosopher being
   starved to death by a conspiration of his two neighbours". If the two neighbours take turns, one of them always
-  holds a fork that the philosopher between them needs. `definitionOrder` keeps no state, so it cannot hold a
+  holds a fork the philosopher between them needs. `definitionOrder` keeps no state, so it cannot hold a
   neighbour back for a philosopher who has waited long. Test: `test/dining-philosophers.test.ts` "lets a
   philosopher starve while both neighbours take turns, because definitionOrder keeps no state".
 - A net that can fire for ever never becomes quiet. In the paper's untimed net, `SendPacket` puts the packet
