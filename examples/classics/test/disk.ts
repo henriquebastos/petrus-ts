@@ -94,7 +94,8 @@ export function createDisk(clockMoves?: () => Promise<void>): Disk {
 /**
  * Runs the net to the end: a process enqueues `tokens` and settles, and dies at commit `crashAt` when that is a
  * number. After a crash a new process enqueues the same batch, which adds nothing when it landed, and settles. `run`
- * wraps each process, so a scheduler can drive it. A crash is `Crashed` from the storage, or `SessionFailed` from a
+ * wraps each process, so a scheduler can drive it. `during` runs in each process while it settles, as a host's
+ * calls; the process settles again after it ends. A crash is `Crashed` from the storage, or `SessionFailed` from a
  * call after it, and only when `crashAt` planted one; any other error fails.
  */
 export async function runToEnd(
@@ -103,11 +104,17 @@ export async function runToEnd(
 	tokens: Marking,
 	crashAt: number | undefined,
 	run: (settling: Promise<void>) => Promise<void> = (settling) => settling,
+	during: (instance: NetInstance) => Promise<void> = () => Promise.resolve(),
 ): Promise<void> {
 	const once = async (dieAt?: number): Promise<void> => {
 		const process = await disk.open(runtime, dieAt);
 		try {
 			await process.instance.enqueue({ requestId: "first", tokens }, context);
+			const calls = during(process.instance);
+			// After a crash the calls can end on the closed Harness; in a process that lives, the await still sees them.
+			calls.catch(() => undefined);
+			await process.settle();
+			await calls;
 			await process.settle();
 		} finally {
 			await process.close();

@@ -81,5 +81,6 @@ The simulation gate shows that `abortFaultProperty` fails on three planted defec
 - `aborted` gives the tokens back once the run has stopped. It does not undo work outside that goes on after a
   process died: see the lease or fence in section 5 of
   [examples/classics/README.md](../../../examples/classics/README.md). Work that the abort cut off may also have
-  been done before the abort landed, so a net that compensates must undo it.
+  been done before the abort landed, so a net that compensates must undo it, as the
+  [order process](../../../examples/classics/docs/order-process.md) does.
 - Each abort scans the conversation's task records, so its cost grows with the operations.

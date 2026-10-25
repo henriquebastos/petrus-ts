@@ -7,7 +7,7 @@ processes" (EWD 123, 1965), and "Hierarchical ordering of sequential processes" 
 philosophers. The simple protocol is from K. Jensen, L. M. Kristensen and L. Wells, "Coloured Petri Nets and CPN
 Tools for modelling and validation of concurrent systems" (STTT 9, 2007), section 2, with the retransmission
 delay of its timed form in Fig. 14. The nets are their usual Petri-net forms, with each piece of outside work
-as a handler.
+as a handler. [docs/order-process.md](docs/order-process.md) adds a workflow net with cancellation.
 
 Each net is a file in `src/` with its handlers over a port to the outside service. Its test in `test/` runs it
 with a fake service and a fast-check scheduler that ends the work in any order. The runtime runs on Pi Durable:
@@ -101,7 +101,7 @@ it allows this.
   enters after that run ends. If the first run's work goes on outside after the process died, as a remote call can, two
   holders are inside at once. A resource that can outlive the process that called it needs a lease or a fence
   keyed by the operation id. The same holds for a meal and its forks. No test covers this case.
-- These nets declare no variant `aborted`, so aborting a task leaves its operation in flight (see
+- The nets above declare no variant `aborted`, so aborting a task leaves its operation in flight (see
   [aborts.md](../../packages/runtime/docs/aborts.md)). A process that never leaves holds the resource token for ever.
 - A philosopher can starve. EWD 310 says that taking both forks at once leaves "a particular philosopher being
   starved to death by a conspiration of his two neighbours". If the two neighbours take turns, one of them always
