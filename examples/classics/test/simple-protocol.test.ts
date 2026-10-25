@@ -81,6 +81,9 @@ function done(marking: Marking, data: readonly string[]): boolean {
 
 const now = (): Promise<void> => Promise.resolve();
 
+/** The property below takes about 5 s with coverage, so the default timeout of 5 s fails it under load. */
+const propertyTimeoutMs = 30_000;
+
 describe("simple protocol", () => {
 	test("delivers the data of the paper once and in order", async () => {
 		const disk = createDisk();
@@ -106,7 +109,9 @@ describe("simple protocol", () => {
 		expect(done(disk.last(), ["COL"])).toBe(true);
 	});
 
-	test("the receiver gets the data once and in order, under any losses, any order of messages and timer ends, and a crash at any commit", async () => {
+	test("the receiver gets the data once and in order, under any losses, any order of messages and timer ends, and a crash at any commit", {
+		timeout: propertyTimeoutMs,
+	}, async () => {
 		await fc.assert(
 			fc.asyncProperty(
 				fc.scheduler(),
