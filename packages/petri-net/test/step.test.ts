@@ -10,7 +10,14 @@ import {
 	placeId,
 	transitionId,
 } from "../src/index.ts";
-import { canonical, markingArbitrary, netArbitrary, places, policyArbitrary } from "./arbitraries.ts";
+import {
+	canonical,
+	keyCountingTokens,
+	markingArbitrary,
+	netArbitrary,
+	places,
+	policyArbitrary,
+} from "./arbitraries.ts";
 import type { Model } from "./model-property.ts";
 import { modelEnables, modelGive, modelTake, ownTokens } from "./model-property.ts";
 
@@ -107,6 +114,27 @@ describe("fireStep, examples", () => {
 	test("fires nothing and returns the same marking when nothing is enabled", () => {
 		const idle = { [comments.id]: ["ana@pr-1"] };
 		expect(fireStep(net, idle, definitionOrder)).toStrictEqual({ fired: [], marking: idle });
+	});
+
+	test("computes keys linearly in the tokens on a place and the tokens taken, in one step", () => {
+		const size = 40;
+		const { tokens, reads } = keyCountingTokens(size);
+		const anything: ColourSet = { name: "Anything", contains: () => true };
+		const jobs: Place = { id: placeId("jobs"), colourSet: anything };
+		const takeJob = (name: string): Transition<"j"> => ({
+			id: transitionId(name),
+			variables: { j: anything },
+			guard: () => true,
+			inputs: [{ place: jobs, variables: ["j"] }],
+			outputs: [],
+		});
+		const jobsNet: Net = { places: [jobs], transitions: [takeJob("finish"), takeJob("drop")] };
+		const step = fireStep(jobsNet, { [jobs.id]: tokens }, definitionOrder);
+		// For each token: once for the place, once in each transition's enabled check, three times in allocation
+		// (the check for finish, the free count, the check for drop that fails) and twice in removing it.
+		expect(reads()).toBe(size * (1 + 2 + 3 + 2));
+		expect(step.fired.map(({ transition }) => transition)).toStrictEqual(tokens.map(() => transitionId("finish")));
+		expect(step.marking).toStrictEqual({});
 	});
 
 	test("a policy that names a transition outside the net is a bug, so it throws", () => {

@@ -4,7 +4,7 @@ import { Value } from "typebox/value";
 import { describe, expect, vi } from "vitest";
 import type { ColourSet, InputArc, Place, Transition } from "../src/index.ts";
 import { enabledBindings, fire, placeId, transitionId } from "../src/index.ts";
-import { canonical, countTokens, firingArbitrary } from "./arbitraries.ts";
+import { canonical, countTokens, firingArbitrary, keyCountingTokens } from "./arbitraries.ts";
 
 const commentSchema = Type.Object({ author: Type.String(), pr: Type.String() });
 const comment: ColourSet = { name: "Comment", contains: (token) => Value.Check(commentSchema, token) };
@@ -290,6 +290,23 @@ describe("enabledBindings, examples", () => {
 		};
 		expect(enabledBindings(start, {})).toStrictEqual([{}]);
 		expect(enabledBindings({ ...start, guard: () => false }, {})).toStrictEqual([]);
+	});
+
+	test("computes the key of each token on a place once in one call, and once for each token a binding takes", () => {
+		const size = 40;
+		const { tokens, reads } = keyCountingTokens(size);
+		const anything: ColourSet = { name: "Anything", contains: () => true };
+		const jobs: Place = { id: placeId("jobs"), colourSet: anything };
+		const finish: Transition<"j"> = {
+			id: transitionId("finish"),
+			variables: { j: anything },
+			guard: () => true,
+			inputs: [{ place: jobs, variables: ["j"] }],
+			outputs: [],
+		};
+		const enabled = enabledBindings(finish, { [jobs.id]: tokens });
+		expect(reads()).toBe(2 * size);
+		expect(enabled.map(({ j }) => j)).toStrictEqual(tokens);
 	});
 });
 

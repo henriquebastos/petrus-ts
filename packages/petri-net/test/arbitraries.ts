@@ -213,3 +213,21 @@ export function canonical(value: Token | undefined): string {
 export function countTokens(marking: Marking): number {
 	return Object.values<readonly Token[]>(marking).reduce((sum, tokens) => sum + tokens.length, 0);
 }
+
+/**
+ * Distinct tokens `{ id: n }` whose `id` is a getter. `tokenKey` reads each own property of an object token once,
+ * so `reads()` is the number of keys computed for these tokens. A count, not a time, so a test of cost is stable.
+ */
+export function keyCountingTokens(size: number): { readonly tokens: readonly Token[]; readonly reads: () => number } {
+	let reads = 0;
+	const tokens = Array.from(
+		{ length: size },
+		(_unused, index): Token => ({
+			get id(): number {
+				reads += 1;
+				return index;
+			},
+		}),
+	);
+	return { tokens, reads: () => reads };
+}

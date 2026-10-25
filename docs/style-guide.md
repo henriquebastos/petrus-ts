@@ -17,7 +17,11 @@ write `value satisfies never`.
 
 ```ts
 // packages/petri-net/src/fire.ts
-function whyNot(transition: Transition, binding: Binding, marking: Marking): NotABinding | NotEnabled | undefined {
+export function whyNot(
+ transition: Transition,
+ binding: Binding,
+ counts: (place: PlaceId) => TokenCounts,
+): NotABinding | NotEnabled | undefined {
 ```
 
 Pattern: Vanderkam Item 29 "Prefer Types That Always Represent Valid States"; Pocock "satisfies never".

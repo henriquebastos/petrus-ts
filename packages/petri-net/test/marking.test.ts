@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { addTokens, emptyMarking, placeId, removeTokens, tokensAt } from "../src/index.ts";
+import { keyCountingTokens } from "./arbitraries.ts";
 
 const a = placeId("a");
 const proto = placeId("__proto__");
@@ -24,6 +25,14 @@ describe("marking", () => {
 	test("reads only the marking's own places", () => {
 		expect(tokensAt({}, placeId("constructor"))).toStrictEqual([]);
 		expect(tokensAt(addTokens({}, proto, [1]), proto)).toStrictEqual([1]);
+	});
+
+	test("computes the key of each available and each wanted token once when it removes tokens, whatever their order", () => {
+		const size = 40;
+		const { tokens, reads } = keyCountingTokens(size);
+		const left = removeTokens({ [a]: tokens }, a, [...tokens].reverse());
+		expect(reads()).toBe(2 * size);
+		expect(left).toStrictEqual({});
 	});
 
 	test("refuses to remove a token that is not there, which only a bug can cause", () => {

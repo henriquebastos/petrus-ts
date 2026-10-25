@@ -1,12 +1,12 @@
 import { bindingProblems, valueOf } from "./binding.ts";
 import type { PlaceId, TransitionId } from "./ids.ts";
-import type { Marking } from "./marking.ts";
-import { addTokens, removeTokens, tokensAt } from "./marking.ts";
+import type { KeyedMarking, Marking } from "./marking.ts";
+import { addTokens, keyedMarking, removeTokens } from "./marking.ts";
 import type { Binding, ExpressionInputArc, InputArc, OutputArc, Transition } from "./net.ts";
 import type { Result } from "./result.ts";
 import { err, ok } from "./result.ts";
-import type { Token } from "./token.ts";
-import { distinctTokens, takeTokens, tokenKey } from "./token.ts";
+import type { Token, TokenCounts } from "./token.ts";
+import { difference, distinctTokens, keyedTokens, tokenKey } from "./token.ts";
 
 /** One input place that lacks tokens the binding takes. */
 export type Shortfall = { readonly place: PlaceId; readonly missing: readonly Token[] };
@@ -33,15 +33,20 @@ export type NotEnabled = {
  * (see `netProblems`).
  */
 export function enabledBindings(transition: Transition, marking: Marking): readonly Binding[] {
+	return enabledBindingsIn(transition, keyedMarking(marking));
+}
+
+/** `enabledBindings` on a keyed marking, so that callers who check many transitions compute each key once. */
+export function enabledBindingsIn(transition: Transition, marking: KeyedMarking): readonly Binding[] {
 	return Object.keys(transition.variables)
 		.reduce<readonly Binding[]>(
-			(partials, variable) =>
-				partials.flatMap((partial) =>
-					candidates(transition, marking, variable).map((token) => ({ ...partial, [variable]: token })),
-				),
+			(partials, variable) => {
+				const values = candidates(transition, marking, variable);
+				return partials.flatMap((partial) => values.map((token) => ({ ...partial, [variable]: token })));
+			},
 			[{}],
 		)
-		.filter((binding) => whyNot(transition, binding, marking) === undefined);
+		.filter((binding) => whyNot(transition, binding, marking.counts) === undefined);
 }
 
 /**
@@ -55,7 +60,7 @@ export function fire(
 	binding: Binding,
 	marking: Marking,
 ): Result<Marking, NotABinding | NotEnabled> {
-	const failure = whyNot(transition, binding, marking);
+	const failure = whyNot(transition, binding, keyedMarking(marking).counts);
 	if (failure !== undefined) {
 		return err(failure);
 	}
@@ -63,7 +68,7 @@ export function fire(
 }
 
 /** Removes the tokens that the input arcs take. The binding element must be enabled in `marking`. */
-export function consume(transition: Transition, binding: Binding, marking: Marking): Marking {
+function consume(transition: Transition, binding: Binding, marking: Marking): Marking {
 	return [...demandByPlace(transition, binding)].reduce(
 		(next, [place, wanted]) => removeTokens(next, place, wanted),
 		marking,
@@ -79,34 +84,34 @@ export function produce(transition: Transition, binding: Binding, marking: Marki
 }
 
 /**
- * Why the binding element cannot fire, or `undefined` when it is enabled. The expression input arcs run only after
- * the binding has no problems.
+ * Why the binding element cannot fire, or `undefined` when it is enabled. `counts` gives the tokens on each place by
+ * key. The expression input arcs run only after the binding has no problems.
  */
 export function whyNot(
 	transition: Transition,
 	binding: Binding,
-	marking: Marking,
+	counts: (place: PlaceId) => TokenCounts,
 ): NotABinding | NotEnabled | undefined {
 	const problems = bindingProblems(transition, binding);
 	if (problems.length > 0) {
 		return { kind: "not-a-binding", transition: transition.id, problems };
 	}
 	const shortfalls = [...demandByPlace(transition, binding)]
-		.map(([place, wanted]) => ({ place, missing: takeTokens(tokensAt(marking, place), wanted).missing }))
+		.map(([place, wanted]) => ({ place, missing: difference(keyedTokens(wanted), counts(place)) }))
 		.filter((shortfall) => shortfall.missing.length > 0);
 	return shortfalls.length > 0 ? { kind: "not-enabled", transition: transition.id, shortfalls } : undefined;
 }
 
-function candidates(transition: Transition, marking: Marking, variable: string): readonly Token[] {
+function candidates(transition: Transition, marking: KeyedMarking, variable: string): readonly Token[] {
 	return distinctTokens(
 		transition.inputs
 			.filter((arc) => arc.variables?.includes(variable) === true)
-			.flatMap((arc) => tokensAt(marking, arc.place.id)),
+			.flatMap((arc) => marking.tokens(arc.place.id)),
 	);
 }
 
 /** Two arcs from the same place add up, so the check sees all the tokens the binding takes there. */
-function demandByPlace(transition: Transition, binding: Binding): ReadonlyMap<PlaceId, readonly Token[]> {
+export function demandByPlace(transition: Transition, binding: Binding): ReadonlyMap<PlaceId, readonly Token[]> {
 	const demand = new Map<PlaceId, readonly Token[]>();
 	for (const arc of transition.inputs) {
 		demand.set(arc.place.id, [...(demand.get(arc.place.id) ?? []), ...taken(transition, arc, binding)]);

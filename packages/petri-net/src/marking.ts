@@ -1,6 +1,6 @@
 import type { PlaceId } from "./ids.ts";
-import type { Token } from "./token.ts";
-import { takeTokens, tokenKey } from "./token.ts";
+import type { KeyedToken, Token, TokenCounts } from "./token.ts";
+import { countKeys, keyedTokens, takeTokens, tokenKey } from "./token.ts";
 
 /**
  * The tokens on each place: a multiset, kept in the order the tokens arrived. A place with no tokens is not listed.
@@ -14,6 +14,33 @@ export const emptyMarking: Marking = {};
 /** Reads only the marking's own keys: a place named `constructor` or `__proto__` must not see an inherited property. */
 export function tokensAt(marking: Marking, place: PlaceId): readonly Token[] {
 	return (Object.hasOwn(marking, place) ? marking[place] : undefined) ?? [];
+}
+
+/** The tokens of each place of one marking, with their keys, and how many tokens of each key the place holds. */
+export type KeyedMarking = {
+	readonly tokens: (place: PlaceId) => readonly KeyedToken[];
+	readonly counts: (place: PlaceId) => TokenCounts;
+};
+
+/**
+ * Reads `marking` place by place. It computes the key of each token once, when its place is first read, so that
+ * many checks against one marking cost the tokens they take, not the tokens on the place.
+ */
+export function keyedMarking(marking: Marking): KeyedMarking {
+	const places = new Map<PlaceId, KeyedPlace>();
+	const read = (place: PlaceId): KeyedPlace => {
+		const known = places.get(place) ?? keyedPlace(tokensAt(marking, place));
+		places.set(place, known);
+		return known;
+	};
+	return { tokens: (place) => read(place).tokens, counts: (place) => read(place).counts };
+}
+
+type KeyedPlace = { readonly tokens: readonly KeyedToken[]; readonly counts: TokenCounts };
+
+function keyedPlace(tokens: readonly Token[]): KeyedPlace {
+	const keyed = keyedTokens(tokens);
+	return { tokens: keyed, counts: countKeys(keyed) };
 }
 
 /** Returns a new marking with `tokens` added after the tokens already on `place`. */
