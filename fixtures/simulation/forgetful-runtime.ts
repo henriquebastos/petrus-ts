@@ -6,6 +6,7 @@ import { admit } from "../../packages/runtime/src/admit.ts";
 import { netInstanceRecord } from "../../packages/runtime/src/net-instance-record.ts";
 import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
 import { checkedState, plan } from "../../packages/runtime/src/net-instance-commit.ts";
+import { viewOf } from "../../packages/runtime/src/net-instance-view.ts";
 
 export function createForgetfulRuntime(options: RuntimeOptions): Runtime {
 	const runtime = createRuntime(options);
@@ -23,8 +24,8 @@ export function createForgetfulRuntime(options: RuntimeOptions): Runtime {
 			enqueue: (batch, context) =>
 				host.commit(async (tx) => {
 					const at = options.clock.now();
-					const state = checkedState(parts, await tx.doc(netInstanceRecord, conversationId));
-					const planned = plan(parts, state, admit(options.net, state, batch, at), at);
+					const view = viewOf(checkedState(parts, await tx.doc(netInstanceRecord, conversationId)));
+					const planned = plan(parts, view, admit(options.net, view, batch, at), at);
 					return { ingress: planned.ingress, fired: planned.kind === "applied" ? planned.fired : [] };
 				}, context),
 		}),

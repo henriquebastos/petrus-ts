@@ -17,8 +17,10 @@ import {
 	hostBatchProblems,
 	operationsInFlight,
 	operationsStartedFrom,
+	startedOperation,
 	startedOperations,
 } from "../src/operations.ts";
+import { viewOf } from "../src/net-instance-view.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
 import { context, createClock, createDisk } from "./disk.ts";
 import type { Service } from "./handler-properties.ts";
@@ -204,10 +206,21 @@ describe("operations", () => {
 	});
 
 	test("the operations that a commit starts are those of the log entries it appends", () => {
-		expect(operationsStartedFrom(handlerIds, log, 1)).toStrictEqual([
+		expect(operationsStartedFrom(handlerIds, log.slice(1), 1)).toStrictEqual([
 			{ id: "work/3", transition: work.id, binding: { j: "j2", s: "slot" } },
 		]);
-		expect(operationsStartedFrom(handlerIds, log, log.length)).toStrictEqual([]);
+		expect(operationsStartedFrom(handlerIds, [], log.length)).toStrictEqual([]);
+	});
+
+	test("finds a started operation by the log index in its id, and nothing for an id of no started operation", () => {
+		const view = viewOf({ marking: {}, log });
+		expect(startedOperation(handlerIds, view, "work/3")).toStrictEqual({
+			id: "work/3",
+			transition: work.id,
+			binding: { j: "j2", s: "slot" },
+		});
+		const unknown = ["other/1", "work/1", "work/2", "other/0", "work/03", "work/9", "work"];
+		expect(unknown.map((id) => startedOperation(handlerIds, view, id))).toStrictEqual(unknown.map(() => undefined));
 	});
 
 	test("an operation is in flight until the log holds its result", () => {
@@ -224,12 +237,12 @@ describe("operations", () => {
 			tokens: { [result]: [resultToken(started.binding, value)] },
 			at: 9,
 		};
-		expect(admitResult(plainJobsNet, handlerIds, state, "work/0", value, 9)).toStrictEqual({
+		expect(admitResult(plainJobsNet, handlerIds, viewOf(state), "work/0", value, 9)).toStrictEqual({
 			kind: "applied",
 			ingress,
-			state: { marking: { [busy]: [started.binding], [result]: ingress.tokens[result] }, log: [started, ingress] },
+			marking: { [busy]: [started.binding], [result]: ingress.tokens[result] },
 		});
-		const later = { marking: state.marking, log: [started, ingress] };
+		const later = viewOf({ marking: state.marking, log: [started, ingress] });
 		expect(
 			admitResult(plainJobsNet, handlerIds, later, "work/0", { variant: "refused", value: "refused" }, 10),
 		).toStrictEqual({ kind: "repeated", ingress });
@@ -238,22 +251,22 @@ describe("operations", () => {
 	test("refuses a result for no started operation, or one the transition does not declare, which is a bug", () => {
 		const state: NetInstanceState = { marking: { [busy]: [started.binding] }, log: [started] };
 		expect(() =>
-			admitResult(plainJobsNet, handlerIds, state, "work/1", { variant: "done", value: "receipt" }, 9),
+			admitResult(plainJobsNet, handlerIds, viewOf(state), "work/1", { variant: "done", value: "receipt" }, 9),
 		).toThrow(new Error("no operation work/1 has started"));
 		const message =
 			'invalid batch result:work/0: marking: {"binding":{"j":"j1","s":"slot"},"value":null,"variant":"lost"} on work:result is not in work result';
-		expect(() => admitResult(plainJobsNet, handlerIds, state, "work/0", { variant: "lost", value: null }, 9)).toThrow(
-			message,
-		);
+		expect(() =>
+			admitResult(plainJobsNet, handlerIds, viewOf(state), "work/0", { variant: "lost", value: null }, 9),
+		).toThrow(message);
 		const recorded = admitResult(
 			plainJobsNet,
 			handlerIds,
-			state,
+			viewOf(state),
 			"work/0",
 			{ variant: "refused", value: "refused" },
 			9,
 		);
-		const later = recorded.kind === "applied" ? recorded.state : state;
+		const later = viewOf({ marking: state.marking, log: [started, recorded.ingress] });
 		expect(() =>
 			admitResult(plainJobsNet, handlerIds, later, "work/0", { variant: "lost", value: null }, 10),
 		).toThrow(message);

@@ -121,4 +121,4 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
   flight until the host calls `Harness.retryTask`.
 - A throw that comes back each time, such as a result that does not fit or a net that does not become quiet in
   1,000 steps, makes the task run again after each `retryDelayMs`, with no limit.
-- Each commit reads the whole log, so its cost grows with the log.
+- `inFlight` and `abort` read the whole log, so their cost grows with it.

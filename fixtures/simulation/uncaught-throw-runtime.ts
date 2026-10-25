@@ -31,7 +31,7 @@ export function createUncaughtThrowRuntime(options: RuntimeOptions): Runtime {
 					}
 					await taskRuntime.commit(async (tx) => {
 						const at = taskRuntime.now();
-						await commitToNetInstance(tx, taskRuntime.conversationId, parts, (state) => admitResult(net, handlerIds, state, id, result, at), at);
+						await commitToNetInstance(tx, taskRuntime.conversationId, parts, (view) => admitResult(net, handlerIds, view, id, result, at), at);
 						return { status: "terminal", outcome: { status: "completed", result: { variant: result.variant, value: json(result.value) } } };
 					}, context);
 				},

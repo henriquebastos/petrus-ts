@@ -1,10 +1,11 @@
 import type { Binding, Net, TransitionId } from "@petrus/petri-net";
 import { placeId } from "@petrus/petri-net";
 import type { Admitted } from "./admit.ts";
-import { admit, checkBatch, recordedIngress } from "./admit.ts";
+import { admit, checkBatch } from "./admit.ts";
 import type { HandlerResult } from "./handlers.ts";
 import { busyPlaceId, resultPlaceId, resultToken } from "./handlers.ts";
-import type { Batch, LogEntry, NetInstanceState } from "./net-instance.ts";
+import type { Batch, LogEntry, Occurrence } from "./net-instance.ts";
+import type { NetInstanceView } from "./net-instance-view.ts";
 
 /**
  * The work that one occurrence of a handler transition started. Its id is the transition and the position of the
@@ -22,20 +23,47 @@ function resultRequestId(operationId: string): string {
 
 /** Every operation that the log started, in log order. `handlers` names the handler transitions. */
 export function startedOperations(handlers: ReadonlySet<TransitionId>, log: readonly LogEntry[]): readonly Operation[] {
-	return log.flatMap((entry, index) =>
-		entry.kind === "occurrence" && handlers.has(entry.transition)
-			? [{ id: `${entry.transition}/${String(index)}`, transition: entry.transition, binding: entry.binding }]
-			: [],
+	return operationsStartedFrom(handlers, log, 0);
+}
+
+/**
+ * The operations that new log entries started: the work that the commit of those entries begins. `firstIndex` is
+ * the log index of the first entry, so the entry at position `i` has the index `firstIndex + i`.
+ */
+export function operationsStartedFrom(
+	handlers: ReadonlySet<TransitionId>,
+	entries: readonly LogEntry[],
+	firstIndex: number,
+): readonly Operation[] {
+	return entries.flatMap((entry, i) =>
+		entry.kind === "occurrence" && handlers.has(entry.transition) ? [operationAt(entry, firstIndex + i)] : [],
 	);
 }
 
-/** The operations that the log entries from index `from` on started: the work that the commit of those entries begins. */
-export function operationsStartedFrom(
+/**
+ * The operation `operationId`, found from its log index in `t/<index>`: only when the entry there is an occurrence
+ * of the handler transition `t`. Otherwise no such operation has started.
+ */
+export function startedOperation(
 	handlers: ReadonlySet<TransitionId>,
-	log: readonly LogEntry[],
-	from: number,
-): readonly Operation[] {
-	return startedOperations(handlers, log).slice(startedOperations(handlers, log.slice(0, from)).length);
+	view: NetInstanceView,
+	operationId: string,
+): Operation | undefined {
+	const index = Number(operationId.slice(operationId.lastIndexOf("/") + 1));
+	const entry = view.entryAt(index);
+	if (entry?.kind !== "occurrence" || !handlers.has(entry.transition)) {
+		return undefined;
+	}
+	const operation = operationAt(entry, index);
+	return operation.id === operationId ? operation : undefined;
+}
+
+function operationAt(occurrence: Occurrence, index: number): Operation {
+	return {
+		id: `${occurrence.transition}/${String(index)}`,
+		transition: occurrence.transition,
+		binding: occurrence.binding,
+	};
 }
 
 /** The started operations whose result the log does not hold: work that runs now, or must run again after a restart. */
@@ -62,18 +90,18 @@ export function operationsInFlight(
 export function admitResult(
 	net: Net,
 	handlers: ReadonlySet<TransitionId>,
-	state: NetInstanceState,
+	view: NetInstanceView,
 	operationId: string,
 	result: HandlerResult,
 	at: number,
 ): Admitted {
-	const operation = startedOperations(handlers, state.log).find((started) => started.id === operationId);
+	const operation = startedOperation(handlers, view, operationId);
 	if (operation === undefined) {
 		throw new Error(`no operation ${operationId} has started`);
 	}
 	const batch = checkedResultBatch(net, operation, result);
-	const recorded = recordedIngress(state.log, batch.requestId);
-	return recorded === undefined ? admit(net, state, batch, at) : { kind: "repeated", ingress: recorded };
+	const recorded = view.ingressOf(batch.requestId);
+	return recorded === undefined ? admit(net, view, batch, at) : { kind: "repeated", ingress: recorded };
 }
 
 /**

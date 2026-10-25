@@ -35,7 +35,7 @@ export function createTimedResultRuntime(options: RuntimeOptions): Runtime {
 							const at = taskRuntime.now();
 							const tokens = { [resultPlaceId(transition)]: [resultToken(binding, result)] };
 							const requestId = `${id}@${String(at)}`;
-							await commitToNetInstance(tx, taskRuntime.conversationId, parts, (state) => admit(net, state, { requestId, tokens }, at), at);
+							await commitToNetInstance(tx, taskRuntime.conversationId, parts, (view) => admit(net, view, { requestId, tokens }, at), at);
 							return { status: "terminal", outcome: { status: "completed", result: { variant: result.variant, value: json(result.value) } } };
 						}, context);
 					} catch (error: unknown) {

@@ -11,8 +11,9 @@ import { handlerProblems, withHandlers } from "./handlers.ts";
 import type { Committed } from "./net-instance-commit.ts";
 import { checkedState, commitToNetInstance } from "./net-instance-commit.ts";
 import type { Batch, NetInstanceState } from "./net-instance.ts";
+import { viewOf } from "./net-instance-view.ts";
 import type { Operation } from "./operations.ts";
-import { hostBatchProblems, operationsInFlight, startedOperations } from "./operations.ts";
+import { hostBatchProblems, operationsInFlight, startedOperation } from "./operations.ts";
 import type { Clock } from "./seams.ts";
 
 /** Where net instances live: a Durable Harness, whose commits, committed reads and task aborts a net instance uses. */
@@ -109,8 +110,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 			state,
 			inFlight: async (context) => operationsInFlight(handlerIds, (await state(context)).log),
 			abort: async (operationId, context) => {
-				const { log } = await state(context);
-				const operation = startedOperations(handlerIds, log).find((started) => started.id === operationId);
+				const operation = startedOperation(handlerIds, viewOf(await state(context)), operationId);
 				if (operation === undefined) {
 					throw new Error(`no operation ${operationId} has started`);
 				}

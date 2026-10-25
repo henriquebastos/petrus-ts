@@ -267,8 +267,10 @@ function instanceWrites(writes: readonly StorageWrite[], instances: Set<Document
 }
 
 function isNetInstanceRecord(value: JsonObject): value is NetInstanceRecord {
-	const { net, marking, log } = value;
-	return typeof net === "string" && isObject(marking) && Array.isArray(log) && log.every(isObject);
+	const { net, marking, log, ingresses } = value;
+	return (
+		typeof net === "string" && isObject(marking) && Array.isArray(log) && log.every(isObject) && isObject(ingresses)
+	);
 }
 
 function isObject(value: JsonValue | undefined): value is JsonObject {

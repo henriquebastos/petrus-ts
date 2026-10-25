@@ -1,13 +1,14 @@
 import type { Marking, Net } from "@petrus/petri-net";
 import { addTokens, markingProblems, placeId, tokenKey } from "@petrus/petri-net";
-import type { Batch, Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
+import type { Batch, Ingress } from "./net-instance.ts";
+import type { NetInstanceView } from "./net-instance-view.ts";
 
 /**
- * `applied`: the batch is new, and `state` holds its tokens and its ingress. `repeated`: the log already has the
- * request id, so nothing changes and `ingress` is the recorded one.
+ * `applied`: the batch is new; `ingress` is its new log entry, and `marking` holds its tokens. `repeated`: the log
+ * already has the request id, so nothing changes and `ingress` is the recorded one.
  */
 export type Admitted =
-	| { readonly kind: "applied"; readonly ingress: Ingress; readonly state: NetInstanceState }
+	| { readonly kind: "applied"; readonly ingress: Ingress; readonly marking: Marking }
 	| { readonly kind: "repeated"; readonly ingress: Ingress };
 
 /**
@@ -15,16 +16,12 @@ export type Admitted =
  * it throws, also when the log holds its request id; so does a request id that the log holds with other tokens.
  * The order of places does not count; the order of tokens on a place does.
  */
-export function admit(net: Net, state: NetInstanceState, batch: Batch, at: number): Admitted {
+export function admit(net: Net, view: NetInstanceView, batch: Batch, at: number): Admitted {
 	checkBatch(net, batch);
-	const recorded = recordedIngress(state.log, batch.requestId);
+	const recorded = view.ingressOf(batch.requestId);
 	if (recorded === undefined) {
 		const ingress: Ingress = { kind: "ingress", requestId: batch.requestId, tokens: batch.tokens, at };
-		return {
-			kind: "applied",
-			ingress,
-			state: { marking: added(state.marking, batch.tokens), log: [...state.log, ingress] },
-		};
+		return { kind: "applied", ingress, marking: added(view.marking, batch.tokens) };
 	}
 	if (tokenKey(recorded.tokens) !== tokenKey(batch.tokens)) {
 		throw new Error(`request ${batch.requestId} already added other tokens`);
@@ -38,11 +35,6 @@ export function checkBatch(net: Net, batch: Batch): void {
 	if (problems.length > 0) {
 		throw new Error(`invalid batch ${batch.requestId}: ${problems.join("; ")}`);
 	}
-}
-
-/** The ingress that the log holds under `requestId`, if any. */
-export function recordedIngress(log: readonly LogEntry[], requestId: string): Ingress | undefined {
-	return log.find((entry): entry is Ingress => entry.kind === "ingress" && entry.requestId === requestId);
 }
 
 function added(marking: Marking, tokens: Marking): Marking {

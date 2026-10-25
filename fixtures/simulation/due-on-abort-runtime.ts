@@ -22,7 +22,7 @@ export function createDueOnAbortRuntime(options: RuntimeOptions): Runtime {
 				}
 				await taskRuntime.commit(async (tx) => {
 					const at = taskRuntime.now();
-					await commitToNetInstance(tx, taskRuntime.conversationId, real.parts, (state) => admitResult(net, handlerIds, state, running.input.id, checkpoint.result, at), at);
+					await commitToNetInstance(tx, taskRuntime.conversationId, real.parts, (view) => admitResult(net, handlerIds, view, running.input.id, checkpoint.result, at), at);
 					return { status: "terminal", outcome: { status: "aborted" } };
 				}, context);
 			},

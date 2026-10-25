@@ -27,16 +27,7 @@ export function createIdBlindRuntime(options: RuntimeOptions): Runtime {
 							tx,
 							conversationId,
 							parts,
-							(current) => {
-								const fresh = admit(options.net, { marking: current.marking, log: [] }, batch, at);
-								return fresh.kind === "applied"
-									? {
-											kind: "applied",
-											ingress: fresh.ingress,
-											state: { marking: fresh.state.marking, log: [...current.log, fresh.ingress] },
-										}
-									: fresh;
-							},
+							(current) => admit(options.net, { ...current, ingressOf: () => undefined }, batch, at),
 							at,
 						),
 					context,

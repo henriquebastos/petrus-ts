@@ -1,11 +1,12 @@
 import type { ConversationId, Tx } from "@earendil-works/pi-durable";
-import type { Net, SelectionPolicy, TransitionId } from "@petrus/petri-net";
+import type { Marking, Net, SelectionPolicy, TransitionId } from "@petrus/petri-net";
 import { markingProblems } from "@petrus/petri-net";
 import type { Admitted } from "./admit.ts";
 import { advanceUntilQuiet } from "./advance.ts";
 import type { NetInstanceRecord } from "./net-instance-record.ts";
-import { netInstanceRecord, readNetInstance, writeNetInstance } from "./net-instance-record.ts";
-import type { Ingress, NetInstanceState, Occurrence } from "./net-instance.ts";
+import { netInstanceRecord, readNetInstance, readNetInstanceView, writeNetInstance } from "./net-instance-record.ts";
+import type { Ingress, LogEntry, NetInstanceState, Occurrence } from "./net-instance.ts";
+import type { NetInstanceView } from "./net-instance-view.ts";
 import type { Operation } from "./operations.ts";
 import { operationsStartedFrom } from "./operations.ts";
 
@@ -32,8 +33,8 @@ export type NetInstanceParts = {
 /** What a commit did: the ingress of its change, and what its steps fired. A repeated change fires nothing. */
 export type Committed = { readonly ingress: Ingress; readonly fired: readonly Occurrence[] };
 
-/** A change of the instance: a host's batch or an operation's result, found from the state that the commit reads. */
-export type Change = (state: NetInstanceState) => Admitted;
+/** A change of the instance: a host's batch or an operation's result, found from the view that the commit reads. */
+export type Change = (view: NetInstanceView) => Admitted;
 
 type Planned =
 	| { readonly kind: "repeated"; readonly ingress: Ingress }
@@ -41,21 +42,31 @@ type Planned =
 			readonly kind: "applied";
 			readonly ingress: Ingress;
 			readonly fired: readonly Occurrence[];
-			readonly state: NetInstanceState;
+			readonly marking: Marking;
+			readonly appended: readonly LogEntry[];
 			readonly started: readonly Operation[];
 	  };
 
 /**
- * The pure part of a commit: a new change, then steps until the net is quiet, and the operations that those steps
- * started. A repeated change plans nothing.
+ * The pure part of a commit: a new change, then steps until the net is quiet, the log entries to append (the
+ * change's ingress, then the occurrences), and the operations that those steps started. A repeated change plans
+ * nothing.
  */
-export function plan(parts: NetInstanceParts, state: NetInstanceState, admitted: Admitted, at: number): Planned {
+export function plan(parts: NetInstanceParts, view: NetInstanceView, admitted: Admitted, at: number): Planned {
 	if (admitted.kind === "repeated") {
 		return admitted;
 	}
-	const stepped = advanceUntilQuiet(parts.net, parts.policy, admitted.state, at);
-	const started = operationsStartedFrom(parts.handlerIds, stepped.state.log, state.log.length);
-	return { kind: "applied", ingress: admitted.ingress, fired: stepped.fired, state: stepped.state, started };
+	const stepped = advanceUntilQuiet(parts.net, parts.policy, admitted.marking, at);
+	const appended = [admitted.ingress, ...stepped.fired];
+	const started = operationsStartedFrom(parts.handlerIds, appended, view.logLength);
+	return {
+		kind: "applied",
+		ingress: admitted.ingress,
+		fired: stepped.fired,
+		marking: stepped.marking,
+		appended,
+		started,
+	};
 }
 
 /**
@@ -71,12 +82,10 @@ export async function commitToNetInstance(
 	at: number,
 ): Promise<Committed> {
 	const draft = await tx.doc(netInstanceRecord, conversationId);
-	const state = checkedState(parts, draft);
-	const planned = plan(parts, state, change(state), at);
+	const planned = commitToRecord(parts, draft, change, at);
 	if (planned.kind === "repeated") {
 		return { ingress: planned.ingress, fired: [] };
 	}
-	writeNetInstance(draft, parts.name, state, planned.state);
 	for (const operation of planned.started) {
 		await parts.start(tx, conversationId, operation, at);
 	}
@@ -84,17 +93,38 @@ export async function commitToNetInstance(
 }
 
 /**
+ * The part of a commit on the stored instance: it reads a checked view, plans the change, and writes an applied
+ * change. It reads the marking, the length of the log, and only the log entries that the change asks for.
+ */
+export function commitToRecord(parts: NetInstanceParts, draft: NetInstanceRecord, change: Change, at: number): Planned {
+	const view = checked(parts, draft, readNetInstanceView);
+	const planned = plan(parts, view, change(view), at);
+	if (planned.kind === "applied") {
+		writeNetInstance(draft, parts.name, planned.marking, planned.appended);
+	}
+	return planned;
+}
+
+/**
  * The state of a stored instance. An instance of another net, or a stored marking that does not fit the net (see
  * `markingProblems`), is a bug in the host or the store, so it throws.
  */
 export function checkedState(parts: NetInstanceParts, stored: Readonly<NetInstanceRecord>): NetInstanceState {
+	return checked(parts, stored, readNetInstance);
+}
+
+function checked<Read extends { readonly marking: Marking }>(
+	parts: NetInstanceParts,
+	stored: Readonly<NetInstanceRecord>,
+	read: (stored: Readonly<NetInstanceRecord>) => Read,
+): Read {
 	if (stored.net !== "" && stored.net !== parts.name) {
 		throw new Error(`the conversation holds an instance of the net ${stored.net}, not ${parts.name}`);
 	}
-	const state = readNetInstance(stored);
-	const wrong = markingProblems(parts.net, state.marking);
+	const copy = read(stored);
+	const wrong = markingProblems(parts.net, copy.marking);
 	if (wrong.length > 0) {
 		throw new Error(`invalid stored marking: ${wrong.join("; ")}`);
 	}
-	return state;
+	return copy;
 }

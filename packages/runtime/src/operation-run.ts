@@ -90,7 +90,7 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 				tx,
 				taskRuntime.conversationId,
 				netInstanceParts,
-				(state) => admitResult(parts.net, parts.handlerIds, state, operation.id, result, at),
+				(view) => admitResult(parts.net, parts.handlerIds, view, operation.id, result, at),
 				at,
 			);
 			return { status: "terminal", outcome: { status: "completed", result: storedResult(result) } };
@@ -129,7 +129,7 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 					tx,
 					taskRuntime.conversationId,
 					netInstanceParts,
-					(state) => admitResult(parts.net, parts.handlerIds, state, operation.id, result, at),
+					(view) => admitResult(parts.net, parts.handlerIds, view, operation.id, result, at),
 					at,
 				);
 			}

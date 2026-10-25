@@ -7,6 +7,7 @@ import { advanceUntilQuiet } from "../../packages/runtime/src/advance.ts";
 import { netInstanceRecord, writeNetInstance } from "../../packages/runtime/src/net-instance-record.ts";
 import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
 import { checkedState } from "../../packages/runtime/src/net-instance-commit.ts";
+import { viewOf } from "../../packages/runtime/src/net-instance-view.ts";
 
 export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {
 	const runtime = createRuntime(options);
@@ -25,18 +26,18 @@ export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {
 				const at = options.clock.now();
 				const ingress = await host.commit(async (tx) => {
 					const draft = await tx.doc(netInstanceRecord, conversationId);
-					const state = checkedState(parts, draft);
-					const admitted = admit(options.net, state, batch, at);
+					const view = viewOf(checkedState(parts, draft));
+					const admitted = admit(options.net, view, batch, at);
 					if (admitted.kind === "applied") {
-						writeNetInstance(draft, options.name, state, admitted.state);
+						writeNetInstance(draft, options.name, admitted.marking, [admitted.ingress]);
 					}
 					return admitted.ingress;
 				}, context);
 				const fired = await host.commit(async (tx) => {
 					const draft = await tx.doc(netInstanceRecord, conversationId);
 					const state = checkedState(parts, draft);
-					const stepped = advanceUntilQuiet(options.net, options.policy, state, at);
-					writeNetInstance(draft, options.name, state, stepped.state);
+					const stepped = advanceUntilQuiet(options.net, options.policy, state.marking, at);
+					writeNetInstance(draft, options.name, stepped.marking, stepped.fired);
 					return stepped.fired;
 				}, context);
 				return { ingress, fired };

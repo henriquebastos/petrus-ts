@@ -6,6 +6,19 @@ import type { NetInstance, Runtime, RuntimeOptions } from "../src/index.ts";
 import { createRuntime } from "../src/index.ts";
 import { stepLimit } from "../src/advance.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
+import type { JsonValue } from "@earendil-works/chord";
+import { defineDoc } from "@earendil-works/pi-durable";
+
+/** The net instance record as version 1 stored it: no index of the ingresses. */
+const netInstanceRecordVersion1 = defineDoc<{ net: string; marking: Record<string, JsonValue[]>; log: JsonValue[] }>({
+	kind: netInstanceRecord.definition.kind,
+	version: 1,
+	scope: "conversation",
+	history: "latest",
+	fork: "initial",
+	initial: () => ({ net: "", marking: {}, log: [] }),
+	checkpointWhen: () => false,
+});
 import type { Disk, Process, TestClock } from "./disk.ts";
 import { context, createClock, createDisk, Crashed } from "./disk.ts";
 import {
@@ -145,6 +158,54 @@ describe("createRuntime, examples", () => {
 		await expect(theirs.state(context)).rejects.toThrow(wrongNet);
 		await expect(theirs.enqueue({ ...batch, requestId: "delivery-2" }, context)).rejects.toThrow(wrongNet);
 		expect(disk.history()).toHaveLength(1);
+	});
+
+	test("opens a net instance that an earlier version stored, and still finds its request ids", async () => {
+		const clock = createClock(1);
+		const runtime = createRuntime(contestedOptions(definitionOrder, clock));
+		const disk = createDisk([runtime.extension], clock);
+		const earlier = await disk.open();
+		const root = await earlier.harness.root(context);
+		const ingress = { kind: "ingress", ...batch, at: 1 };
+		const fired = { kind: "occurrence", transition: takeLeft, binding: { j: "j1" }, at: 1 };
+		await earlier.harness.commit(async (tx) => {
+			const draft = await tx.doc(netInstanceRecordVersion1, root.id);
+			draft.net = "contested";
+			draft.marking = { [left.id]: ["j1"], [ready.id]: ["j2"] };
+			draft.log = [{ ...ingress, tokens: { [ready.id]: ["j1", "j2"] } }, fired];
+		}, context);
+		await earlier.harness.close(context);
+		const { instance } = await instanceIn(disk, runtime);
+		clock.moveTo(2);
+		expect(await instance.enqueue(batch, context)).toStrictEqual({ ingress, fired: [] });
+		const next = await instance.enqueue({ requestId: "delivery-2", tokens: { [ready.id]: ["j2"] } }, context);
+		expect(next.ingress).toStrictEqual({
+			kind: "ingress",
+			requestId: "delivery-2",
+			tokens: { [ready.id]: ["j2"] },
+			at: 2,
+		});
+		expect(await instance.enqueue(batch, context)).toStrictEqual({ ingress, fired: [] });
+	});
+
+	test("on a new process, finds the recorded ingress of a request id that names a property of every object", async () => {
+		const clock = createClock(1);
+		const runtime = createRuntime(contestedOptions(definitionOrder, clock));
+		const disk = createDisk([runtime.extension], clock);
+		const batches = ["__proto__", "constructor", "toString"].map((requestId) => ({ ...batch, requestId }));
+		const earlier = await disk.open();
+		const first = runtime.instance(earlier.harness, (await earlier.harness.root(context)).id);
+		const ingresses = [];
+		for (const sent of batches) {
+			ingresses.push((await first.enqueue(sent, context)).ingress);
+		}
+		await earlier.harness.close(context);
+		const { instance } = await instanceIn(disk, runtime);
+		clock.moveTo(2);
+		for (const [index, sent] of batches.entries()) {
+			expect(await instance.enqueue(sent, context)).toStrictEqual({ ingress: ingresses[index], fired: [] });
+		}
+		expect(disk.history()).toHaveLength(batches.length);
 	});
 
 	test("refuses a stored marking that does not fit the net, which is a bug in the store", async () => {
