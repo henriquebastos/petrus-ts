@@ -4,7 +4,7 @@
  * - no text file names a place outside the repository (a home directory or the outside discussion notes);
  * - each repository path that a Markdown file names exists;
  * - each quoted text that a Markdown file cites from a file, written `path` "text", is in that file. A citation
- *   may wrap to the next line of its paragraph.
+ *   may wrap to the next line of its paragraph, and may list more texts: `path` "one", "two" and "three".
  * `fixtures/` (planted defects) and the generated API reports are not checked. Run from the repository root
  * (the gate test runs it from a sandbox copy).
  */
@@ -170,12 +170,23 @@ function lineNumber({ start, offsets }: Paragraph, position: number): number {
 	return start + offsets.filter((offset) => offset <= position).length;
 }
 
+/** A path in backticks, then one quoted text or a list of them joined by commas and `and`. */
+const citation = /`([^`]+)` ("[^"]+"(?:,? (?:and )?"[^"]+")*)/g;
+
+/** Each quoted text of a citation's list, with where it starts in the paragraph's text. */
+function quotesOf(list: string, start: number): readonly { readonly quote: string; readonly at: number }[] {
+	return [...list.matchAll(/"([^"]+)"/g)].map(({ 1: quote = "", index }) => ({ quote, at: start + index }));
+}
+
 function citationProblems(file: string, lines: readonly string[]): readonly string[] {
 	return paragraphs(lines).flatMap((paragraph) =>
-		[...paragraph.text.matchAll(/`([^`]+)` "([^"]+)"/g)].flatMap(({ 1: path = "", 2: quote = "", index }) =>
-			citationHolds(file, path, quote)
-				? []
-				: [`${file}:${String(lineNumber(paragraph, index))} cites "${quote}", which ${path} does not contain`],
+		[...paragraph.text.matchAll(citation)].flatMap(({ 0: whole, 1: path = "", 2: list = "", index }) =>
+			quotesOf(list, index + whole.length - list.length)
+				.filter(({ quote }) => !citationHolds(file, path, quote))
+				.map(
+					({ quote, at }) =>
+						`${file}:${String(lineNumber(paragraph, at))} cites "${quote}", which ${path} does not contain`,
+				),
 		),
 	);
 }

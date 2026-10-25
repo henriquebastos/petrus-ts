@@ -14,6 +14,11 @@ A citation on a later line of a paragraph is reported on its own line. This one 
 "a batch that enables nothing commits its ingress and fires nothing", and on the next line this one is wrong:
 `test/runtime.test.ts` "fires every transition at once".
 
+A citation may list more test titles. In this list the first is right and the second is wrong:
+`test/runtime.test.ts` "a commit fires up to stepLimit steps", "fires nothing twice". In this list the last one,
+after "and", is wrong: `test/runtime.test.ts` "a commit fires up to stepLimit steps", "a batch that enables nothing
+commits its ingress and fires nothing" and "never commits at all".
+
 > In a block quote a citation may wrap too. This one is right and must pass: `test/runtime.test.ts` "a batch that
 > enables nothing commits its ingress and fires nothing".
 

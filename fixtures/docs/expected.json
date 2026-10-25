@@ -7,5 +7,7 @@
 	"docs/too-long.md has 1508 words, limit 1500",
 	"packages/runtime/docs/wrong-citation.md:3 cites \"commits nothing ever, under any condition\", which test/runtime.test.ts does not contain",
 	"packages/runtime/docs/wrong-citation.md:7 cites \"commits nothing when no token is ready\", which test/runtime.test.ts does not contain",
-	"packages/runtime/docs/wrong-citation.md:15 cites \"fires every transition at once\", which test/runtime.test.ts does not contain"
+	"packages/runtime/docs/wrong-citation.md:15 cites \"fires every transition at once\", which test/runtime.test.ts does not contain",
+	"packages/runtime/docs/wrong-citation.md:18 cites \"fires nothing twice\", which test/runtime.test.ts does not contain",
+	"packages/runtime/docs/wrong-citation.md:20 cites \"never commits at all\", which test/runtime.test.ts does not contain"
 ]
