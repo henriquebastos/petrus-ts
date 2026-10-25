@@ -33,10 +33,16 @@ function peersNotTested(
 		.map(([name, version]) => `${name}@${version}`);
 }
 
+/**
+ * The root manifest and that of each package folder. A file beside the folders, such as Finder's `.DS_Store`, is no
+ * package.
+ */
 const manifestPaths = [
 	"package.json",
 	...["packages", "examples"].flatMap((folder) =>
-		readdirSync(join(repoRoot, folder)).map((name) => join(folder, name, "package.json")),
+		readdirSync(join(repoRoot, folder), { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => join(folder, entry.name, "package.json")),
 	),
 ];
 
