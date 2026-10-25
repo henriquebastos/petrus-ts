@@ -18,7 +18,7 @@ const budgets: Readonly<Record<string, Budget>> = {
 		maxFiles: 9,
 		forbid: [/^node:/, /node_modules\//, /^packages\/(?!petri-net\/)/],
 	},
-	"packages/runtime/src/index.ts": { maxFiles: 19, forbid: [/^node:/] },
+	"packages/runtime/src/index.ts": { maxFiles: 20, forbid: [/^node:/] },
 };
 
 const cruiseOutput = Type.Object({

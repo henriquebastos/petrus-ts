@@ -43,7 +43,7 @@ ignores (`fixtures/simulation/early-due-runtime.ts`), a `due` phase that ends th
 
 ## 3 Failures
 
-Each failure is reported to the host, and the phase runs again after `retryDelayMs`.
+Each failure is reported to the host. The phase runs again after `retryDelayMs`, except after a broken net instance.
 
 - A delay that is not a finite number of at least 0 is a bug in the handler. The handler runs again, and the delay
   of the next run still counts from the start time.
@@ -55,6 +55,8 @@ Each failure is reported to the host, and the phase runs again after `retryDelay
 - A throw in the commit of a due result: the `due` phase runs again, and the handler does not.
   Test: `test/delays.test.ts` "a throw in the commit of a due result is reported, and the result commits after
   retryDelayMs, with no new run of the handler".
+- A broken net instance in the commit of a due result ends the task as faulted, with no new run of the handler:
+  see [broken-instances.md](broken-instances.md).
 
 ## 4 Limits
 

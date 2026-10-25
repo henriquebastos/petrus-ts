@@ -1,6 +1,7 @@
 import { placeId, transitionId } from "@petrus/petri-net";
 import { describe, expect, test } from "vitest";
 import type { NetInstanceState } from "../src/index.ts";
+import { BrokenNetInstance } from "../src/net-instance.ts";
 import type { NetInstanceRecord } from "../src/net-instance-record.ts";
 import {
 	json,
@@ -140,7 +141,7 @@ describe("the net instance record", () => {
 		];
 		for (const value of wrong) {
 			expect(() => netInstanceRecord.definition.migrate?.(value, 1)).toThrow(
-				new TypeError("a version 1 net instance record needs a net name, a marking and a log of entries"),
+				new BrokenNetInstance("a version 1 net instance record needs a net name, a marking and a log of entries"),
 			);
 		}
 	});

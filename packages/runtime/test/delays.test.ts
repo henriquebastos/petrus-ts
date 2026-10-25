@@ -4,6 +4,9 @@ import { tokensAt } from "@petrus/petri-net";
 import { describe, expect, onTestFinished, test } from "vitest";
 import type { Handler, NetInstance } from "../src/index.ts";
 import { createRuntime } from "../src/index.ts";
+import { BrokenNetInstance } from "../src/net-instance.ts";
+import { netInstanceRecord } from "../src/net-instance-record.ts";
+import { otherNet } from "./broken-instance.ts";
 import type { Disk, Process } from "./disk.ts";
 import { context, createClock, createDisk } from "./disk.ts";
 import {
@@ -107,6 +110,31 @@ describe("delayed results", () => {
 		expect(disk.reports()).toMatchObject([{ message: "the end's arc failed once" }]);
 		expect(handler.runs()).toBe(1);
 		expect(resultTime(disk)).toBe(16);
+	});
+
+	test("a broken net instance in the commit of a due result ends the task faulted, reported once, with no new run of the handler", async () => {
+		const handler = reminderHandler((r) => elapsedAfter(r, 10));
+		const { disk, process } = await remindedAt5(handler);
+		await process.runReady();
+		const [task] = (await process.harness.inspect(context)).tasks;
+		if (task === undefined) {
+			throw new Error("the enqueue created no task");
+		}
+		const root = await process.harness.root(context);
+		await process.harness.commit(async (tx) => {
+			otherNet(await tx.doc(netInstanceRecord, root.id));
+		}, context);
+		await process.settle();
+		await process.harness.waitForIdle(context);
+		expect(disk.reports()).toStrictEqual([
+			new BrokenNetInstance("the conversation holds an instance of the net other, not reminders"),
+		]);
+		expect((await process.harness.getTask(task.record.id, context))?.state).toMatchObject({
+			status: "terminal",
+			outcome: { status: "faulted" },
+		});
+		expect(handler.runs()).toBe(1);
+		expect(resultTime(disk)).toBeUndefined();
 	});
 
 	test("aborting a sleeping task ends it as aborted, and its result never counts", async () => {

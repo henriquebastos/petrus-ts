@@ -20,3 +20,12 @@ export type LogEntry = Occurrence | Ingress;
 
 /** The state of one net instance. The marking and the log change in the same commit. */
 export type NetInstanceState = { readonly marking: Marking; readonly log: readonly LogEntry[] };
+
+/**
+ * A bug that the runtime finds in a net instance or its net, such as a stored marking that does not fit the net or a
+ * net that does not become quiet. A commit with the same input throws it again, so a handler task that meets it ends
+ * faulted.
+ */
+export class BrokenNetInstance extends Error {
+	override readonly name = "BrokenNetInstance";
+}

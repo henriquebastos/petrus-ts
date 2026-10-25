@@ -5,7 +5,7 @@ The core rule:
 > A handler transition fires like any transition and starts an operation, and the same commit creates the
 > operation's task. The task runs the handler outside the net. Then one commit puts the result on the transition's
 > result place under the request id `result:<operation id>`, steps the net until it is quiet, and ends the task.
-> After a throw or a crash the handler runs again: it runs at least once, and only its first result counts.
+> After a crash or most throws the handler runs again: it runs at least once, and only its first result counts.
 
 ## 1 Terms
 
@@ -32,7 +32,7 @@ The core rule:
   task as `completed`. Its time comes from the Harness's clock. A handler can also return a
   **delayed result**: see [delays.md](delays.md).
 - When a phase throws, the task reports the error (`onReport`), sleeps for `retryDelayMs`, and runs the phase
-  again. The operation stays in flight.
+  again, unless the net instance is broken. The operation stays in flight.
 - No task runs until the host calls `harness.resume()`.
 
 ## 2 Guarantees
@@ -83,7 +83,7 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
 ## 3 Failures
 
 - A handler throws, the operation's transition has no handler, or the result's commit throws: the task reports
-  the error and runs again after `retryDelayMs`.
+  the error and runs again after `retryDelayMs`. A [broken net instance](broken-instances.md) ends it as faulted.
   Tests: `test/handlers.test.ts` "a handler's throw is reported, and the operation stays in flight and runs again
   after retryDelayMs", "a task whose transition has no handler, as after the host dropped it, is reported and runs
   again after retryDelayMs".
@@ -119,6 +119,5 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
 - With no variant `aborted`, an aborted operation stays in flight for ever, with its input tokens taken.
 - Durable parks a task that a crash cuts off `restartLimit` times in a row (default 5). Its operation stays in
   flight until the host calls `Harness.retryTask`.
-- A throw that comes back each time, such as a result that does not fit or a net that does not become quiet in
-  1,000 steps, makes the task run again after each `retryDelayMs`, with no limit.
+- A throw that comes back each time, such as a result that does not fit, makes the task run again with no limit.
 - `inFlight` and `abort` read the whole log, so their cost grows with it.

@@ -4,6 +4,7 @@ import { defineDoc } from "@earendil-works/pi-durable";
 import type { Marking, Token } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
 import type { Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
+import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 
 type StoredMarking = Record<string, JsonValue[]>;
@@ -51,7 +52,7 @@ export const netInstanceRecord: ConversationDocToken<NetInstanceRecord> = define
  */
 function withIngressIndex(value: JsonObject): NetInstanceRecord {
 	if (!isVersion1(value)) {
-		throw new TypeError("a version 1 net instance record needs a net name, a marking and a log of entries");
+		throw new BrokenNetInstance("a version 1 net instance record needs a net name, a marking and a log of entries");
 	}
 	const ingresses = Object.fromEntries(
 		value.log.flatMap((entry, index): [string, number][] =>

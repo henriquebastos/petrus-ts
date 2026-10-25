@@ -1,6 +1,7 @@
 import type { Marking, Net, SelectionPolicy } from "@petrus/petri-net";
 import { fireStep } from "@petrus/petri-net";
 import type { Occurrence } from "./net-instance.ts";
+import { BrokenNetInstance } from "./net-instance.ts";
 
 /** What one step fired: its occurrences, in firing order, and the marking after it. */
 export type Stepped = { readonly fired: readonly Occurrence[]; readonly marking: Marking };
@@ -37,7 +38,7 @@ export function advanceUntilQuiet(net: Net, policy: SelectionPolicy, marking: Ma
 			return { fired, marking: current };
 		}
 		if (steps === stepLimit) {
-			throw new Error(`the net did not become quiet after ${String(stepLimit)} steps`);
+			throw new BrokenNetInstance(`the net did not become quiet after ${String(stepLimit)} steps`);
 		}
 		fired.push(...stepped.fired);
 		current = stepped.marking;

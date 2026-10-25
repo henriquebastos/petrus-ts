@@ -6,19 +6,8 @@ import type { NetInstance, Runtime, RuntimeOptions } from "../src/index.ts";
 import { createRuntime } from "../src/index.ts";
 import { stepLimit } from "../src/advance.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
-import type { JsonValue } from "@earendil-works/chord";
-import { defineDoc } from "@earendil-works/pi-durable";
-
-/** The net instance record as version 1 stored it: no index of the ingresses. */
-const netInstanceRecordVersion1 = defineDoc<{ net: string; marking: Record<string, JsonValue[]>; log: JsonValue[] }>({
-	kind: netInstanceRecord.definition.kind,
-	version: 1,
-	scope: "conversation",
-	history: "latest",
-	fork: "initial",
-	initial: () => ({ net: "", marking: {}, log: [] }),
-	checkpointWhen: () => false,
-});
+import { BrokenNetInstance } from "../src/net-instance.ts";
+import { netInstanceRecordVersion1 } from "./broken-instance.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
 import { context, createClock, createDisk, Crashed } from "./disk.ts";
 import {
@@ -134,7 +123,7 @@ describe("createRuntime, examples", () => {
 	test("refuses a net that can still fire after stepLimit steps, which is a bug in the net, and commits nothing", async () => {
 		const { disk, instance } = await opened({ name: "counter", net: counter(stepLimit + 1) });
 		await expect(instance.enqueue({ requestId: "start", tokens: { [counted.id]: [0] } }, context)).rejects.toThrow(
-			new Error("the net did not become quiet after 1000 steps"),
+			new BrokenNetInstance("the net did not become quiet after 1000 steps"),
 		);
 		expect(disk.history()).toStrictEqual([]);
 	});
@@ -154,7 +143,7 @@ describe("createRuntime, examples", () => {
 		const { process, instance } = await instanceIn(disk, mine);
 		await instance.enqueue(batch, context);
 		const theirs = other.instance(process.harness, (await process.harness.root(context)).id);
-		const wrongNet = new Error("the conversation holds an instance of the net contested, not other");
+		const wrongNet = new BrokenNetInstance("the conversation holds an instance of the net contested, not other");
 		await expect(theirs.state(context)).rejects.toThrow(wrongNet);
 		await expect(theirs.enqueue({ ...batch, requestId: "delivery-2" }, context)).rejects.toThrow(wrongNet);
 		expect(disk.history()).toHaveLength(1);
@@ -216,7 +205,7 @@ describe("createRuntime, examples", () => {
 			draft.net = "contested";
 			draft.marking = { [ready.id]: ["j9"], lost: ["j1"] };
 		}, context);
-		const problems = new Error(
+		const problems = new BrokenNetInstance(
 			'invalid stored marking: marking: "j9" on ready is not in Job; marking: place lost is not in the net',
 		);
 		await expect(instance.state(context)).rejects.toThrow(problems);

@@ -8,6 +8,7 @@ import type {
 	Ingress,
 	NetInstance,
 	NetInstanceState,
+	Operation,
 	RuntimeOptions,
 } from "../src/index.ts";
 import { busyPlaceId, createRuntime, resultPlaceId, withHandlers } from "../src/index.ts";
@@ -21,6 +22,17 @@ import {
 	startedOperations,
 } from "../src/operations.ts";
 import { viewOf } from "../src/net-instance-view.ts";
+import { BrokenNetInstance } from "../src/net-instance.ts";
+import type { BrokenRun } from "./broken-instance.ts";
+import {
+	afterEnqueue,
+	badVersion1,
+	brokenRun,
+	lostPlace,
+	otherNet,
+	restlessJobsNet,
+	shiftedLog,
+} from "./broken-instance.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
 import { context, createClock, createDisk } from "./disk.ts";
 import type { Service } from "./handler-properties.ts";
@@ -252,7 +264,7 @@ describe("operations", () => {
 		const state: NetInstanceState = { marking: { [busy]: [started.binding] }, log: [started] };
 		expect(() =>
 			admitResult(plainJobsNet, handlerIds, viewOf(state), "work/1", { variant: "done", value: "receipt" }, 9),
-		).toThrow(new Error("no operation work/1 has started"));
+		).toThrow(new BrokenNetInstance("no operation work/1 has started"));
 		const message =
 			'invalid batch result:work/0: marking: {"binding":{"j":"j1","s":"slot"},"value":null,"variant":"lost"} on work:result is not in work result';
 		expect(() =>
@@ -426,6 +438,42 @@ describe("createRuntime with handlers, examples", () => {
 		expect(disk.reports()).toStrictEqual([new Error("no handler runs work")]);
 		expect(process.harness.wake()).toStrictEqual({ active: false, at: 10 });
 		expect(service.calls().size).toBe(0);
+	});
+
+	/** A handler task that met a broken instance: it ended faulted with one report of `message`, and committed nothing. */
+	function faultedOnce(message: string, inFlight: readonly Operation[]): BrokenRun {
+		const reports = [`BrokenNetInstance: ${message}`];
+		return { settled: "settled", idle: true, reports, task: "faulted", commits: 0, inFlight };
+	}
+
+	test("a net that does not become quiet after a result ends the task faulted, reported once, and the operation stays in flight", async () => {
+		expect(await brokenRun(createRuntime, restlessJobsNet, afterEnqueue(undefined))).toStrictEqual(
+			faultedOnce("the net did not become quiet after 1000 steps", [operation]),
+		);
+	});
+
+	test("a stored log that names no started operation ends the task faulted, reported once, with nothing committed", async () => {
+		expect(await brokenRun(createRuntime, jobsNet, afterEnqueue(shiftedLog))).toStrictEqual(
+			faultedOnce("no operation work/1 has started", []),
+		);
+	});
+
+	test("an instance of another net ends the task faulted, reported once, and the operation stays in flight", async () => {
+		expect(await brokenRun(createRuntime, jobsNet, afterEnqueue(otherNet))).toStrictEqual(
+			faultedOnce("the conversation holds an instance of the net other, not jobs", [operation]),
+		);
+	});
+
+	test("a stored marking that does not fit the net ends the task faulted, reported once, and the operation stays in flight", async () => {
+		expect(await brokenRun(createRuntime, jobsNet, afterEnqueue(lostPlace))).toStrictEqual(
+			faultedOnce("invalid stored marking: marking: place lost is not in the net", [operation]),
+		);
+	});
+
+	test("a stored version 1 record that does not migrate ends the task faulted, reported once, with nothing committed", async () => {
+		expect(await brokenRun(createRuntime, jobsNet, badVersion1)).toStrictEqual(
+			faultedOnce("a version 1 net instance record needs a net name, a marking and a log of entries", []),
+		);
 	});
 
 	test("aborting a handler task ends it as aborted without running the handler, and its operation stays in flight", async () => {

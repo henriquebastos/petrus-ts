@@ -5,6 +5,7 @@ import { admit, checkBatch } from "./admit.ts";
 import type { HandlerResult } from "./handlers.ts";
 import { busyPlaceId, resultPlaceId, resultToken } from "./handlers.ts";
 import type { Batch, LogEntry, Occurrence } from "./net-instance.ts";
+import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 
 /**
@@ -97,7 +98,7 @@ export function admitResult(
 ): Admitted {
 	const operation = startedOperation(handlers, view, operationId);
 	if (operation === undefined) {
-		throw new Error(`no operation ${operationId} has started`);
+		throw new BrokenNetInstance(`no operation ${operationId} has started`);
 	}
 	const batch = checkedResultBatch(net, operation, result);
 	const recorded = view.ingressOf(batch.requestId);

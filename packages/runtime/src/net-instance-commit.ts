@@ -6,6 +6,7 @@ import { advanceUntilQuiet } from "./advance.ts";
 import type { NetInstanceRecord } from "./net-instance-record.ts";
 import { netInstanceRecord, readNetInstance, readNetInstanceView, writeNetInstance } from "./net-instance-record.ts";
 import type { Ingress, LogEntry, NetInstanceState, Occurrence } from "./net-instance.ts";
+import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 import type { Operation } from "./operations.ts";
 import { operationsStartedFrom } from "./operations.ts";
@@ -119,12 +120,12 @@ function checked<Read extends { readonly marking: Marking }>(
 	read: (stored: Readonly<NetInstanceRecord>) => Read,
 ): Read {
 	if (stored.net !== "" && stored.net !== parts.name) {
-		throw new Error(`the conversation holds an instance of the net ${stored.net}, not ${parts.name}`);
+		throw new BrokenNetInstance(`the conversation holds an instance of the net ${stored.net}, not ${parts.name}`);
 	}
 	const copy = read(stored);
 	const wrong = markingProblems(parts.net, copy.marking);
 	if (wrong.length > 0) {
-		throw new Error(`invalid stored marking: ${wrong.join("; ")}`);
+		throw new BrokenNetInstance(`invalid stored marking: ${wrong.join("; ")}`);
 	}
 	return copy;
 }

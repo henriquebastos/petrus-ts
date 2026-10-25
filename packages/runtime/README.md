@@ -41,4 +41,6 @@ Session, `Context`) appear only where the code calls them.
 - [docs/handlers.md](docs/handlers.md): handler transitions, operations and their tasks, with the same structure.
 - [docs/delays.md](docs/delays.md): delayed results, which wait on a Durable sleep.
 - [docs/aborts.md](docs/aborts.md): host aborts, which end an operation with its variant `aborted`.
+- [docs/broken-instances.md](docs/broken-instances.md): bugs in a stored net instance or its net, which the
+  runtime does not retry.
 - [api/runtime.api.md](api/runtime.api.md): the public signatures. `pnpm lint:api` keeps it current.

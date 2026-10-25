@@ -3,6 +3,7 @@ import { definitionOrder, placeId, transitionId } from "@petrus/petri-net";
 import { describe, expect, test } from "vitest";
 import type { Occurrence } from "../src/index.ts";
 import { advance, advanceUntilQuiet, stepLimit } from "../src/advance.ts";
+import { BrokenNetInstance } from "../src/net-instance.ts";
 import { contested, counted, counter, initialState } from "./properties.ts";
 
 describe("advance", () => {
@@ -46,7 +47,7 @@ describe("advanceUntilQuiet", () => {
 		const start: Marking = { [counted.id]: [0] };
 		expect(advanceUntilQuiet(counter(stepLimit), definitionOrder, start, 7).fired).toHaveLength(stepLimit);
 		expect(() => advanceUntilQuiet(counter(stepLimit + 1), definitionOrder, start, 7)).toThrow(
-			new Error("the net did not become quiet after 1000 steps"),
+			new BrokenNetInstance("the net did not become quiet after 1000 steps"),
 		);
 	});
 });

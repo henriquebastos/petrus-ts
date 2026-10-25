@@ -18,6 +18,9 @@ import { createSplitCommitRuntime } from "../../fixtures/simulation/split-commit
 import { createStaleReadRuntime } from "../../fixtures/simulation/stale-read-runtime.ts";
 import { createTimedResultRuntime } from "../../fixtures/simulation/timed-result-runtime.ts";
 import { createUncaughtThrowRuntime } from "../../fixtures/simulation/uncaught-throw-runtime.ts";
+import { createRetryEveryThrowRuntime } from "../../fixtures/simulation/retry-every-throw-runtime.ts";
+import { afterEnqueue, brokenRun, otherNet } from "../../packages/runtime/test/broken-instance.ts";
+import { jobsNet } from "../../packages/runtime/test/handler-properties.ts";
 
 /** The property itself said "inconsistent", so a crash in the harness cannot pass for a found defect. */
 const propertyVerdict = "Error: Property failed by returning false";
@@ -83,6 +86,16 @@ test("the outage finds the runtime whose handler task ends faulted when its hand
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
 		reason: propertyVerdict,
+	});
+});
+
+test("an instance of another net finds the runtime whose handler task retries a broken net instance for ever", async () => {
+	const run = await brokenRun(createRetryEveryThrowRuntime, jobsNet, afterEnqueue(otherNet));
+	expect({ settled: run.settled, idle: run.idle, reports: run.reports.length, task: run.task }).toStrictEqual({
+		settled: "Error: the tasks still sleep after 1000 clock moves",
+		idle: false,
+		reports: 1000,
+		task: "sleeping",
 	});
 });
 

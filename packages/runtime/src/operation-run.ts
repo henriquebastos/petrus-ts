@@ -8,6 +8,7 @@ import type { DelayedResult, Handler, HandlerResult } from "./handlers.ts";
 import { abortedVariant, declaresAborted } from "./handlers.ts";
 import type { NetInstanceParts, StartOperation } from "./net-instance-commit.ts";
 import { commitToNetInstance } from "./net-instance-commit.ts";
+import { BrokenNetInstance } from "./net-instance.ts";
 import type { Operation } from "./operations.ts";
 import { admitResult, checkedResultBatch } from "./operations.ts";
 
@@ -39,7 +40,8 @@ export type OperationRun = {
  * operation's binding and id. For a result, one commit ends the task with it, puts it on the result place, and steps
  * the net until it is quiet. For a delayed result, the task sleeps until the operation's start time plus the delay,
  * and its `due` phase makes that same commit. A throw in a phase is reported to the host; the task sleeps for
- * `retryDelayMs` and runs the phase again, as the operation is still in flight. After a crash Durable runs the phase
+ * `retryDelayMs` and runs the phase again, as the operation is still in flight. A `BrokenNetInstance` from the
+ * result's commit would throw again, so it ends the task as faulted. After a crash Durable runs the phase
  * again, so a handler runs at least once and its result counts once. An aborted task whose transition declares the
  * variant `aborted` records that result and steps, in the commit that ends the task.
  */
@@ -97,7 +99,10 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 		}, context);
 	}
 
-	/** Runs a phase's work. A throw is reported, and the task sleeps `retryDelayMs` before the phase runs again. */
+	/**
+	 * Runs a phase's work. A throw is reported, and the task sleeps `retryDelayMs` before the phase runs again. A
+	 * `BrokenNetInstance` would throw again on each run, so it ends the task as faulted, and Durable reports it once.
+	 */
 	async function retried(
 		taskRuntime: RunningTask,
 		checkpoint: Checkpoint,
@@ -107,8 +112,9 @@ export function createOperationRun(parts: OperationRunParts): OperationRun {
 		try {
 			await work();
 		} catch (error: unknown) {
-			// An abort or a close stops the task: Durable ends it, so the failed commit is no failure to report.
-			if (taskRuntime.signal.aborted) {
+			// An abort or a close stops the task: Durable ends it, so the failed commit is no failure to report. A broken
+			// net instance would throw again: Durable ends the task faulted, and reports it once.
+			if (taskRuntime.signal.aborted || error instanceof BrokenNetInstance) {
 				throw error;
 			}
 			taskRuntime.report(error);
