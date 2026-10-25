@@ -119,17 +119,17 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@earendil-works/chord':
-        specifier: 1.4.0
-        version: 1.4.0
-      '@earendil-works/pi-durable':
-        specifier: 1.4.0
-        version: 1.4.0(@aws-sdk/credential-provider-node@3.972.88)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7)
       '@petrus/petri-net':
         specifier: workspace:*
         version: link:../petri-net
     devDependencies:
+      '@earendil-works/chord':
+        specifier: 1.4.0
+        version: 1.4.0
       '@earendil-works/pi-ai':
+        specifier: 1.4.0
+        version: 1.4.0(@aws-sdk/credential-provider-node@3.972.88)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7)
+      '@earendil-works/pi-durable':
         specifier: 1.4.0
         version: 1.4.0(@aws-sdk/credential-provider-node@3.972.88)(@smithy/signature-v4@5.7.4)(ws@8.22.0)(zod@4.6.7)
 

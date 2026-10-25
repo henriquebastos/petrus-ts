@@ -4,6 +4,9 @@ Runs net instances on Pi Durable, one net instance per conversation. An enqueue 
 under the host's request id, and steps the net until the selection policy selects nothing, in the same commit. A
 retry with the same id adds nothing, and the same id with other tokens throws. Time comes from an injected clock.
 
+The host installs `@earendil-works/pi-durable` and `@earendil-works/chord` at 1.4.0, the peer dependencies of this
+package, so the host and the runtime share one copy of Durable: its Harness, its registry and its error classes.
+
 ```ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
