@@ -8,8 +8,12 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 | Steps of a net, selection policies, allocation        | `packages/petri-net/docs/steps.md`                                                           |
 | Enqueues, commits, steps, crashes, concurrency        | `packages/runtime/docs/spec.md`                                                              |
 | Handler transitions, operations, handler tasks        | `packages/runtime/docs/handlers.md`                                                          |
+| Delayed results, Durable sleeps                       | `packages/runtime/docs/delays.md`                                                            |
+| Host aborts into the `aborted` variant                | `packages/runtime/docs/aborts.md`                                                            |
+| Faulted tasks, bugs in a stored instance              | `packages/runtime/docs/broken-instances.md`                                                  |
 | A host app: request ids, the edge, a Harness, storage | `examples/comment-replies/README.md`                                                         |
 | Classical nets with handlers and their invariants     | `examples/classics/README.md`                                                                |
+| A workflow net with cancellation                      | `examples/classics/docs/order-process.md`                                                    |
 | Scale runs, count budgets                             | `examples/classics/docs/scale.md`                                                            |
 | Code style                                            | `docs/style-guide.md`                                                                        |
 | A lint, type, dependency or test gate                 | the config file and its comments, the gate test in `test/gates/`, its fixture in `fixtures/` |
@@ -22,12 +26,14 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 - A change to a package's public API fails `lint:api`. If the change is intended, run `pnpm lint:api --update` and commit the report diff in `packages/*/api/`.
 - The pre-commit hook runs `pnpm feedback`, and the pre-push hook runs `pnpm inspect` (CRAP and duplication on the pushed
   commits) and `pnpm periodic` (mutation testing, break score 100). Do not skip them with `--no-verify`.
-  Run `pnpm periodic` yourself after a change to `petri-net` or `runtime` logic, and read the surviving mutants.
+  Run `pnpm periodic` yourself after a change to `packages/*/src`, and read the surviving mutants.
 
 ## Docs
 
 - Docs describe the code as it is now. Change a doc in the same commit as the code it describes.
   Delete text that is no longer true; git keeps the history. There are no decision records, plans or worklogs here.
+  The open work and design proposals are GitHub issues of this repository (`gh issue list`). Read the issue
+  before you start. Close it from the commit that does it, and put what stays true into the docs.
 - Put a reason as close to the code as possible: a test that fails is best, then the tool's error message,
   then a comment at the setting. Write a doc only for what spans many files.
 - A spec names the test that proves each invariant, as a path and the test title in quotes.
@@ -50,7 +56,8 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 
 ## Tool choices
 
-Each was tried against the planted defects. Do not change one without a new trial.
+Each was tried against the planted defects. Do not change one without a new trial: run the new tool on `fixtures/`
+and the gate tests, and put the result as a reason at the setting.
 
 - Keep ESLint with typescript-eslint; do not move to oxlint. oxlint matches the fixtures only through its alpha JS
   plugin interface, it obeys `oxlint-disable` comments (a new bypass), and the eslint-comments plugin crashes under it.

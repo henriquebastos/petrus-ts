@@ -2,20 +2,27 @@
 
 Petrus runs coloured Petri nets as durable programs. A host adds tokens from outside under a request id. The
 commit that adds them steps the net until the selection policy picks nothing, and holds the new marking with the
-occurrences of its steps. The Python Petrus is a separate implementation; nothing is ported from it.
+occurrences of its steps. It runs on Pi Durable (`@earendil-works/pi-durable`), the durable task and document
+library of [Pi](https://github.com/earendil-works/pi). The [Python Petrus](https://github.com/henriquebastos/petrus)
+is a separate implementation; nothing is ported from it.
 
 ## Status
 
-Walking skeleton. `petri-net` has the firing rule; `runtime` runs net instances and handlers on Pi Durable 1.4.0,
-with the clock as a seam. Each operation runs as a Durable task in the host's process. Every quality gate has a
-planted defect in `fixtures/` and a test in `test/gates/` that shows the gate still fails on it.
+Early, not released. `petri-net` has coloured nets, bindings with input arc expressions, Jensen steps and
+selection policies. `runtime` runs net instances on Pi Durable 1.4.0: enqueues under request ids, handler
+transitions as Durable tasks, delayed results, host aborts, and a faulted task when a stored instance is broken.
+The clock is a seam. Two examples run on it, with count budgets for scale. Every quality gate has a planted defect
+in `fixtures/` and a test in `test/gates/` that shows the gate still fails on it.
+
+Known limits are in the "Limits" sections of the package docs. The open work and the design proposals are the
+[GitHub issues](https://github.com/henriquebastos/petrus-ts/issues) of this repository.
 
 ## Packages
 
-| Package             | Role                                                    | May import              | Docs                                                                            |
-| ------------------- | ------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------- |
-| `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.   | nothing                 | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
-| `@petrus/runtime`   | Net instances on Pi Durable: enqueues, steps, handlers. | `petri-net`, Pi Durable | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
+| Package             | Role                                                    | May import                     | Docs                                                                            |
+| ------------------- | ------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------- |
+| `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure.   | nothing                        | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
+| `@petrus/runtime`   | Net instances on Pi Durable: enqueues, steps, handlers. | `petri-net`, Pi Durable, Chord | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md)     |
 
 `examples/comment-replies` is a host app on these packages: GitHub webhook deliveries in, request ids, Durable's
 JSONL storage. See its [README](examples/comment-replies/README.md). `examples/classics` runs nets from the
@@ -24,15 +31,17 @@ literature with handler transitions and checks each net's invariant at every com
 An example imports packages only through their root, and no package imports an example.
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:
-`hamsterdan`, `hamsterdan-github` and `hamsterdan-cli`, in that order.
+`hamsterdan`, `hamsterdan-github` and `hamsterdan-cli`, in that order. They are reserved for a later host
+application. They do not exist in this repository yet.
 
 ## Commands
 
-Requirements: Node 26.8.2 (`.node-version`) and pnpm 11.5.2.
+Requirements: Node 26.8.2 (`.node-version`), pnpm 11.5.2 (`npm install -g pnpm@11.5.2`) and git.
+`pnpm install` needs the npm registry: it fetches the `@earendil-works/*` 1.4.0 packages.
 
 ```sh
 pnpm install
-pnpm feedback      # every gate; the pre-commit hook runs it (about 15 seconds)
+pnpm feedback      # every gate; the pre-commit hook runs it (15 to 30 seconds)
 pnpm test          # unit and property tests with coverage
 pnpm test:gates    # planted defects: each gate must still fail on its fixture
 pnpm inspect       # tests, then Fallow CRAP and clones on the changed files; the pre-push hook runs it
@@ -52,6 +61,8 @@ so the audit skips those parts.
 
 `pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src`. It fails below a
 mutation score of 100: each surviving mutant needs a test, or a reasoned Stryker disable comment when it is equivalent.
+It keeps an incremental file in `reports/mutation/`, which git ignores. A full run, as on a fresh clone and its
+first push, takes about 30 minutes; a later run tests only the mutants that a change affects.
 
 `pnpm install` installs the Husky hooks in `.husky/`. `pre-commit` runs `pnpm feedback`. `pre-push` runs
 `pnpm inspect` on the commits the push sends, then `pnpm periodic`.
@@ -67,4 +78,5 @@ Remove the alias when those tools support TypeScript 7.1.
 
 - [AGENTS.md](AGENTS.md): how to change this repository safely, and which doc to read for each topic.
 - [docs/style-guide.md](docs/style-guide.md): the code rules that no tool checks.
-- Each package has a README and a spec; the package table above links them.
+- Each package has a README and docs in its `docs/` folder; the package table above links them.
+  `AGENTS.md` lists each doc by topic.
