@@ -1,0 +1,14 @@
+{
+	"name": "@petrus/runtime-view",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@petrus/petri-net": "workspace:*",
+		"@petrus/runtime": "workspace:*",
+		"@petrus/net-view": "workspace:*"
+	}
+}

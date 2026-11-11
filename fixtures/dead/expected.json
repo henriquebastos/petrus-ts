@@ -1,1 +1,1 @@
-{ "exports": ["unusedExport"], "dependencies": ["left-pad"], "unlisted": ["lodash-es"] }
+{ "exports": ["unusedExport", "unusedViewer"], "dependencies": ["left-pad"], "unlisted": ["lodash-es"] }

@@ -1,9 +1,19 @@
 /**
- * Package layers, lowest first: petri-net <- runtime <- hamsterdan <- hamsterdan-github <- hamsterdan-cli.
- * A package imports only packages below it, and only through their root (`src/index.ts`).
+ * The ordering blocks upward imports. The display rules also block execution and layout across sibling branches.
+ * A package imports another through its root. A host may also load the public viewer stylesheet.
  * Type-only edges count for cycles.
  */
-const layers = ["petri-net", "runtime", "hamsterdan", "hamsterdan-github", "hamsterdan-cli"];
+const layers = [
+	"petri-net",
+	"runtime",
+	"net-view",
+	"net-layout",
+	"runtime-view",
+	"net-view-react",
+	"hamsterdan",
+	"hamsterdan-github",
+	"hamsterdan-cli",
+];
 
 const layerRules = layers.slice(0, -1).map((layer, index) => ({
 	name: `${layer}-imports-only-lower-layers`,
@@ -24,6 +34,19 @@ module.exports = {
 		},
 		...layerRules,
 		{
+			name: "display-does-not-run-or-layout",
+			severity: "error",
+			comment: "The React display consumes data. Runtime replay and layout remain host choices.",
+			from: { path: "^packages/net-view-react/" },
+			to: { path: "^packages/(runtime|runtime-view|net-layout)/" },
+		},
+		{
+			name: "view-data-does-not-run",
+			severity: "error",
+			from: { path: "^packages/(net-view|net-layout)/" },
+			to: { path: "^packages/runtime/" },
+		},
+		{
 			name: "cross-package-via-root-only",
 			severity: "error",
 			comment: "Another package's files are private: import @petrus/x, not its src files.",
@@ -35,7 +58,10 @@ module.exports = {
 			severity: "error",
 			comment: "An example is a host app: it imports @petrus/x like any app, never another file of a package.",
 			from: { path: "^examples/" },
-			to: { path: "^packages/", pathNot: ["^packages/[^/]+/src/index\\.ts$"] },
+			to: {
+				path: "^packages/",
+				pathNot: ["^packages/[^/]+/src/index\\.ts$", "^packages/net-view-react/src/style\\.css$"],
+			},
 		},
 		{
 			name: "packages-never-import-examples",

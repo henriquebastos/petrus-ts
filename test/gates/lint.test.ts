@@ -19,7 +19,10 @@ describe("ESLint gate", () => {
 
 	test("lints every tracked source file and skips the fixtures", async () => {
 		const eslint = new ESLint({ cwd: repoRoot });
-		const tracked = execFileSync("git", ["ls-files", "*.ts", "*.js", "*.cjs"], { cwd: repoRoot, encoding: "utf8" })
+		const tracked = execFileSync("git", ["ls-files", "*.ts", "*.tsx", "*.js", "*.cjs"], {
+			cwd: repoRoot,
+			encoding: "utf8",
+		})
 			.split("\n")
 			.filter((path) => path !== "");
 		const checks = await Promise.all(

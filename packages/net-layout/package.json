@@ -1,0 +1,13 @@
+{
+	"name": "@petrus/net-layout",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@petrus/net-view": "workspace:*",
+		"elkjs": "0.12.0"
+	}
+}

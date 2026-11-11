@@ -15,7 +15,9 @@
 			".dependency-cruiser.cjs",
 			"eslint.config.js",
 			"vitest*.config.ts",
-			"examples/*/src/main.ts"
+			"examples/*/src/main.ts",
+			// This script drives a real browser. Istanbul cannot measure its child-process checks.
+			"examples/classics/verify-viewer.ts"
 		]
 	},
 	"duplicates": { "threshold": 0.1 },

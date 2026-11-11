@@ -9,12 +9,17 @@
 			}
 		},
 		"packages/*": {
-			"entry": ["test/**/*.test.ts"],
-			"project": ["src/**/*.ts", "test/**/*.ts"]
+			"entry": ["test/**/*.test.{ts,tsx}"],
+			"project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"]
 		},
 		"examples/*": {
 			"entry": ["test/**/*.test.ts", "src/main.ts"],
 			"project": ["src/**/*.ts", "test/**/*.ts"]
+		},
+		"examples/classics": {
+			"entry": ["test/**/*.test.{ts,tsx}", "viewer/main.tsx"],
+			"ignoreBinaries": ["agent-browser"],
+			"project": ["src/**/*.ts", "test/**/*.{ts,tsx}", "viewer/**/*.{ts,tsx}"]
 		}
 	}
 }

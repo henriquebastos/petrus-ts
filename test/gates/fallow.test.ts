@@ -43,7 +43,11 @@ function committedPackages(): string {
 describe("Fallow audit, the inspect gate for CRAP and duplication on changed code", () => {
 	test("fails on an uncovered function with cyclomatic complexity 3 (CRAP 12), which the lint limit of 5 allows", async () => {
 		const root = committedPackages();
-		plant(root, { "packages/petri-net/src/retry-delay.ts": "fixtures/crap/retry-delay.ts" });
+		plant(root, {
+			"packages/petri-net/src/retry-delay.ts": "fixtures/crap/retry-delay.ts",
+			// The same function in the browser proof script must stay outside the measured-code gate.
+			"examples/classics/verify-viewer.ts": "fixtures/crap/retry-delay.ts",
+		});
 		await runTool("vitest", ["run", "--coverage"], root);
 		const run = await runTool("fallow", ["audit", "--format", "json", "--quiet"], root);
 		const report = parseJson(run.stdout, auditReport);

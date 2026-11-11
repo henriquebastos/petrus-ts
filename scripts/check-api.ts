@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Extractor, ExtractorConfig, ExtractorLogLevel } from "@microsoft/api-extractor";
 
-const reportedPackages = ["petri-net", "runtime"];
+const reportedPackages = ["petri-net", "runtime", "net-view", "net-layout", "runtime-view", "net-view-react"];
 const update = process.argv.includes("--update");
 const root = process.cwd();
 const tsc = join(import.meta.dirname, "..", "node_modules", ".bin", "tsc");

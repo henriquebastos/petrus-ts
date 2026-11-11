@@ -1,6 +1,11 @@
 {
 	"extends": "../../tsconfig.base.json",
 	// An app, not a library: it has no API report, so its exported nets may keep their inferred types.
-	"compilerOptions": { "types": [], "isolatedDeclarations": false },
-	"include": ["src/**/*.ts", "test/**/*.ts"]
+	"compilerOptions": {
+		"types": ["node", "vite/client"],
+		"lib": ["ES2024", "DOM", "DOM.Iterable"],
+		"jsx": "react-jsx",
+		"isolatedDeclarations": false
+	},
+	"include": ["*.ts", "src/**/*.ts", "test/**/*.ts", "test/**/*.tsx", "viewer/**/*.ts", "viewer/**/*.tsx"]
 }

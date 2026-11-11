@@ -9,8 +9,9 @@ Tools for modelling and validation of concurrent systems" (STTT 9, 2007), sectio
 delay of its timed form in Fig. 14. The nets are their usual Petri-net forms, with each piece of outside work
 as a handler. [docs/order-process.md](docs/order-process.md) adds a workflow net with cancellation;
 [docs/scale.md](docs/scale.md) has scale runs and count budgets.
+The [viewer](docs/viewer.md) shows recorded runs.
 
-Each net is a file in `src/` with its handlers over a port to the outside service. Its test in `test/` runs it
+Each net in `src/` has handlers over an outside-service port. Its test in `test/` runs it
 with a fake service and a fast-check scheduler that ends the work in any order. The runtime runs on Pi Durable:
 the first enqueue gives the net its first tokens, each commit steps the net until nothing fires, and each piece of
 work runs as a Durable task. `test/disk.ts` keeps Durable's storage in memory, records the marking of every commit

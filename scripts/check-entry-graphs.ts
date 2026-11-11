@@ -21,6 +21,14 @@ const budgets: Readonly<Record<string, Budget>> = {
 	},
 	// The engine adds six modules; the instance cache and ingress buckets add two more.
 	"packages/runtime/src/index.ts": { maxFiles: 28, forbid: [/^node:/] },
+	// Display roots reach the six indexed-engine modules through the public petri-net root.
+	"packages/net-view/src/index.ts": { maxFiles: 19, forbid: [/^node:/, /^packages\/runtime\//] },
+	"packages/net-layout/src/index.ts": { maxFiles: 2, forbid: [/^node:/, /^packages\/runtime\//] },
+	"packages/runtime-view/src/index.ts": { maxFiles: 21, forbid: [/^node:/, /^packages\/runtime\//] },
+	"packages/net-view-react/src/index.ts": {
+		maxFiles: 24,
+		forbid: [/^node:/, /^packages\/(runtime|runtime-view|net-layout)\//],
+	},
 };
 
 const cruiseOutput = Type.Object({

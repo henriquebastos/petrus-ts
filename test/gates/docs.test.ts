@@ -15,6 +15,7 @@ test("the docs check reports each planted docs defect, in root docs and in packa
 	const root = sandbox({
 		packages: "packages",
 		examples: "examples",
+		"knip.json": "knip.json",
 		"docs/too-long.md": "fixtures/docs/too-long.md",
 		"docs/outside.md": "fixtures/docs/outside.md",
 		"docs/missing-path.md": "fixtures/docs/missing-path.md",

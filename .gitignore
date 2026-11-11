@@ -7,3 +7,6 @@ node_modules/
 *.tsbuildinfo
 .DS_Store
 /.amp/portals/
+/examples/classics/viewer/dist/
+/examples/classics/viewer/public/run.json
+/examples/classics/viewer/public/dining.json

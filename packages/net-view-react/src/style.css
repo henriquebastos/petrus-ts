@@ -1,0 +1,487 @@
+/* Hosts load React Flow's stylesheet before these semantic viewer styles. */
+:root {
+	color-scheme: light dark;
+	font-family: system-ui, sans-serif;
+	font-synthesis: none;
+	--surface: #ffffff;
+	--canvas: #f5f6fa;
+	--inset: #eef0f6;
+	--line: #d2d7e3;
+	--text: #293147;
+	--muted: #63708a;
+	--selected-arc: #3467c1;
+	--arc: #8591a7;
+	--grid: #d9deea;
+	--enabled: #31815b;
+	--firing: #b58224;
+	--ingress: #885fb3;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--surface: #242637;
+		--canvas: #1e2030;
+		--inset: #2b2e43;
+		--line: #41465e;
+		--text: #d4d9ed;
+		--muted: #a0aac7;
+		--selected-arc: #8aaff0;
+		--arc: #7885a6;
+		--grid: #34384e;
+		--enabled: #9bd5ad;
+		--firing: #efd49a;
+		--ingress: #c8a5e9;
+	}
+}
+* {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+	background: var(--canvas);
+	color: var(--text);
+}
+.viewer {
+	height: 100dvh;
+	display: flex;
+	flex-direction: column;
+	font-size: 12px;
+}
+.viewer button,
+.viewer select {
+	font: inherit;
+	color: inherit;
+	border: 1px solid var(--line);
+	border-radius: 4px;
+	background: var(--surface);
+	padding: 6px 9px;
+}
+.viewer button {
+	cursor: pointer;
+}
+.viewer button:hover:not(:disabled) {
+	background: var(--inset);
+	border-color: var(--selected-arc);
+}
+.viewer button:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+:focus-visible {
+	outline: 2px solid var(--selected-arc);
+	outline-offset: 2px;
+}
+.topbar {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	height: 48px;
+	flex-shrink: 0;
+	padding: 0 16px;
+	border-bottom: 1px solid var(--line);
+	background: var(--surface);
+}
+.brand {
+	font-size: 19px;
+	font-weight: 700;
+	letter-spacing: -1px;
+}
+.topbar h1 {
+	font-size: 13px;
+	font-weight: 500;
+	margin: 0;
+}
+.status {
+	color: var(--muted);
+	margin-left: auto;
+	font-size: 11px;
+}
+.workspace {
+	flex: 1;
+	min-height: 0;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 280px;
+}
+.canvas-panel {
+	min-width: 0;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+.canvas-heading {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 16px;
+	color: var(--muted);
+}
+.canvas-heading small {
+	margin-left: 12px;
+}
+.legend {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 10px;
+}
+.legend i,
+.legend b {
+	width: 7px;
+	height: 7px;
+	border-radius: 2px;
+	background: var(--enabled);
+}
+.legend b {
+	background: var(--firing);
+	margin-left: 8px;
+}
+.canvas {
+	flex: 1;
+	min-height: 0;
+}
+.react-flow {
+	--xy-background-color: transparent;
+	--xy-edge-label-background-color: var(--canvas);
+	--xy-edge-label-color: var(--text);
+}
+.petri-node {
+	width: 44px;
+	height: 44px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.shape {
+	background: var(--surface);
+	border: 2px solid var(--arc);
+}
+.place .shape {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	display: grid;
+	place-items: center;
+	font:
+		15px ui-monospace,
+		monospace;
+}
+.transition .shape {
+	width: 16px;
+	height: 44px;
+	border-radius: 2px;
+	background: var(--arc);
+}
+.transition[data-enabled="true"] .shape {
+	background: var(--enabled);
+	border-color: var(--enabled);
+}
+.transition[data-active="true"] .shape {
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--firing) 30%, transparent);
+	border-color: var(--firing);
+}
+.petri-node[data-selected="true"] .shape {
+	outline: 2px solid var(--selected-arc);
+	outline-offset: 4px;
+}
+.node-name {
+	position: absolute;
+	top: 51px;
+	white-space: nowrap;
+	padding: 1px 4px;
+	background: var(--canvas);
+	font:
+		12px ui-monospace,
+		monospace;
+}
+.react-flow__handle {
+	opacity: 0;
+	width: 1px;
+	height: 1px;
+	min-width: 0;
+	min-height: 0;
+	border: 0;
+}
+.react-flow__handle-left {
+	left: 0;
+}
+.react-flow__handle-right {
+	right: 0;
+}
+.react-flow__handle-top {
+	top: 0;
+}
+.react-flow__handle-bottom {
+	bottom: 0;
+}
+.transition .react-flow__handle-left {
+	left: 0;
+}
+.transition .react-flow__handle-right {
+	right: 0;
+}
+.petri-node.transition {
+	width: 16px;
+}
+.react-flow__edge-text {
+	font:
+		10px ui-monospace,
+		monospace;
+}
+.travel-token {
+	fill: var(--firing);
+	offset-distance: 0%;
+	opacity: 0;
+	animation: token-travel 450ms ease-in-out both;
+}
+.travel-token[data-role="output"] {
+	animation-delay: 450ms;
+}
+@keyframes token-travel {
+	0% {
+		opacity: 0;
+		offset-distance: 0%;
+	}
+	10%,
+	90% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+		offset-distance: 100%;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.travel-token {
+		animation: none;
+	}
+}
+.inspector {
+	border-left: 1px solid var(--line);
+	background: var(--surface);
+	padding: 16px;
+	overflow: auto;
+	min-height: 0;
+}
+.eyebrow {
+	font:
+		10px ui-monospace,
+		monospace;
+	letter-spacing: 1px;
+	color: var(--muted);
+	margin: 0 0 16px;
+}
+.inspector label {
+	display: block;
+	margin-bottom: 6px;
+	color: var(--muted);
+	font-size: 11px;
+}
+.inspector select {
+	width: 100%;
+}
+.inspector h2 {
+	font-size: 18px;
+	font-weight: 500;
+	margin: 22px 0 6px;
+	overflow-wrap: anywhere;
+}
+.inspector h3 {
+	font-size: 12px;
+	margin: 18px 0 8px;
+}
+.muted,
+.empty {
+	color: var(--muted);
+	font-size: 11px;
+	line-height: 1.6;
+}
+.count {
+	color: var(--selected-arc);
+	margin-left: 6px;
+}
+.tokens {
+	padding: 0;
+	list-style: none;
+	margin: 0;
+}
+.tokens li,
+.empty {
+	padding: 8px 10px;
+	margin: 4px 0;
+	background: var(--inset);
+	border-radius: 4px;
+}
+pre,
+code {
+	font:
+		11px / 1.6 ui-monospace,
+		monospace;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.tokens pre {
+	margin: 0;
+}
+.event-detail {
+	border-top: 1px solid var(--line);
+	margin-top: 20px;
+}
+.event-detail strong {
+	display: block;
+	overflow-wrap: anywhere;
+}
+.event-kind {
+	color: var(--ingress);
+	font:
+		10px ui-monospace,
+		monospace;
+}
+.provenance {
+	border-top: 1px solid var(--line);
+	margin-top: 20px;
+	padding-top: 12px;
+	color: var(--muted);
+	font-size: 11px;
+}
+.provenance summary {
+	cursor: pointer;
+}
+.event-strip {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	border-top: 1px solid var(--line);
+	background: var(--surface);
+	padding: 6px 16px;
+}
+.event-strip .eyebrow {
+	margin: 0;
+}
+.event-track {
+	display: flex;
+	overflow-x: auto;
+	flex: 1;
+	padding: 3px;
+}
+.viewer .event-tick {
+	border: 0;
+	background: transparent;
+	min-width: 28px;
+	padding: 3px 5px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	color: var(--muted);
+	font:
+		9px ui-monospace,
+		monospace;
+}
+.event-tick i {
+	width: 7px;
+	height: 12px;
+	border-radius: 2px;
+	background: var(--arc);
+}
+.event-tick[data-kind="ingress"] i {
+	background: var(--ingress);
+}
+.event-tick[data-kind="occurrence"] i {
+	background: var(--enabled);
+}
+.viewer .event-tick[aria-current="step"] {
+	background: var(--inset);
+	outline: 1px solid var(--selected-arc);
+	color: var(--text);
+}
+.timeline {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 8px 16px;
+	background: var(--surface);
+	border-top: 1px solid var(--line);
+}
+.transport {
+	display: flex;
+	gap: 5px;
+	align-items: center;
+}
+.transport output {
+	min-width: 65px;
+	text-align: center;
+	font:
+		11px ui-monospace,
+		monospace;
+}
+.timeline label {
+	color: var(--muted);
+	font-size: 11px;
+}
+.timeline select {
+	flex: 1;
+	min-width: 0;
+}
+.statusbar {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	color: var(--muted);
+	font-size: 10px;
+	padding: 5px 16px;
+	border-top: 1px solid var(--line);
+	background: var(--inset);
+}
+.load-screen {
+	padding: 40px;
+}
+@media (max-width: 700px) {
+	.viewer {
+		height: auto;
+		min-height: 100dvh;
+	}
+	.topbar {
+		height: auto;
+		min-height: 48px;
+		flex-wrap: wrap;
+		gap: 10px;
+		padding: 10px;
+	}
+	.workspace {
+		display: flex;
+		flex-direction: column;
+	}
+	.canvas-panel {
+		height: 55dvh;
+		min-height: 300px;
+		flex-shrink: 0;
+	}
+	.inspector {
+		border-left: 0;
+		border-top: 1px solid var(--line);
+		max-height: 270px;
+	}
+	.canvas-heading {
+		font-size: 10px;
+		padding: 8px;
+	}
+	.canvas-heading small {
+		margin-left: 4px;
+	}
+	.legend {
+		display: none;
+	}
+	.timeline {
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.timeline label {
+		display: none;
+	}
+	.timeline select {
+		flex-basis: 100%;
+	}
+	.statusbar span:last-child {
+		display: none;
+	}
+}

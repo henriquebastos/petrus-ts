@@ -46,12 +46,14 @@ const ambientWorld = {
 };
 
 export default tseslint.config(
-	{ ignores: ["fixtures/**", "coverage/**", "reports/**", ".stryker-tmp/**"] },
+	{ ignores: ["fixtures/**", "coverage/**", "reports/**", ".stryker-tmp/**", "examples/classics/viewer/dist/**"] },
 	// no-empty and preserve-caught-error: an empty catch, or a wrapped error without its cause, hides a failure.
 	js.configs.recommended,
 	comments.recommended,
 	...tseslint.configs.strictTypeChecked,
 	...tseslint.configs.stylisticTypeChecked,
+	// JSX gets the same typed rules as the existing TypeScript sources.
+	{ files: ["**/*.tsx"] },
 	{
 		languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
 		linterOptions: { reportUnusedDisableDirectives: "error" },
