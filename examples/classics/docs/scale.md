@@ -23,3 +23,5 @@ factor. The log is the runtime's, so its length is exact.
 - The final log has one entry for the first batch, three for each meal, and for each order eight, or ten when it
   is cancelled. Test: `test/scale.test.ts` "the final log has 3N + 1 entries for N philosophers, and 8N + 2
   ceil(N / 3) + 1 for N orders".
+- The same formulas hold for generated N from 2 to 30, including all three remainders modulo 3.
+  Test: `test/scale.test.ts` "the log-length formulas hold for generated sizes from 2 to 30".

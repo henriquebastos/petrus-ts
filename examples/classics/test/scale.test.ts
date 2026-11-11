@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { expect, test } from "vitest";
 import type { ScaleNet, ScaleRun } from "./scale.ts";
 import { runAtScale } from "./scale.ts";
@@ -57,4 +58,14 @@ test("the final log has 3N + 1 entries for N philosophers, and 8N + 2 ceil(N / 3
 		philosophers: [3 * size + 1, 6 * size + 1],
 		orders: [8 * size + 2 * Math.ceil(size / 3) + 1, 16 * size + 2 * Math.ceil((2 * size) / 3) + 1],
 	});
+});
+
+test("the log-length formulas hold for generated sizes from 2 to 30", async () => {
+	await fc.assert(
+		fc.asyncProperty(fc.integer({ min: 2, max: 30 }), async (n) => {
+			expect((await runAtScale("philosophers", n)).logLength).toBe(3 * n + 1);
+			expect((await runAtScale("orders", n)).logLength).toBe(8 * n + 2 * Math.ceil(n / 3) + 1);
+		}),
+		{ numRuns: 8, examples: [[2], [3], [4]] },
+	);
 });

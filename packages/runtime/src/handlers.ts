@@ -180,11 +180,15 @@ const resultKeys = tokenKey(["binding", "value", "variant"]);
 
 /** The three fields of a result token, not yet checked against the handler, or `undefined` when it has other keys. */
 function resultFields(token: Token): ResultFields | undefined {
-	return isRecord(token) && tokenKey(Object.keys(token).sort()) === resultKeys ? withNamedVariant(token) : undefined;
+	return hasResultKeys(token) ? withNamedVariant(token) : undefined;
 }
 
-function withNamedVariant(fields: Readonly<Record<string, Token>>): ResultFields | undefined {
-	const { binding = null, variant = null, value = null } = fields;
+function hasResultKeys(token: Token): token is Readonly<Record<"binding" | "value" | "variant", Token>> {
+	return isRecord(token) && tokenKey(Object.keys(token).sort()) === resultKeys;
+}
+
+function withNamedVariant(fields: Readonly<Record<"binding" | "value" | "variant", Token>>): ResultFields | undefined {
+	const { binding, variant, value } = fields;
 	return typeof variant === "string" ? { binding, variant, value } : undefined;
 }
 
