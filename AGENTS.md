@@ -18,6 +18,14 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 | Code style                                            | `docs/style-guide.md`                                                                        |
 | A lint, type, dependency or test gate                 | the config file and its comments, the gate test in `test/gates/`, its fixture in `fixtures/` |
 
+## Design rules
+
+- Use Pi Durable for storage, tasks, sleeps and aborts. Do not build a runner, a queue or a store of your own.
+- Use the words and the structure of the Petri-net literature (Jensen, van der Aalst) where Petrus need not differ.
+- Test a new runtime feature on a classical net in `examples/classics` before an application uses it.
+- Build primitives first. A net is plain data; there is no net DSL. Add one only when examples show the need.
+- Keep each module pure where it can be, simple, and with one job. The imports form a tree with no cycles.
+
 ## Done means green
 
 - Run `pnpm feedback` before you say a change is done. Report the result.

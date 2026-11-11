@@ -1,6 +1,8 @@
 # Petrus TS
 
-Petrus runs coloured Petri nets as durable programs. A host adds tokens from outside under a request id. The
+Petrus runs coloured Petri nets as durable programs. Its aim is to coordinate outside work, such as AI agents and
+the services they call, as a net: each piece of work is a handler transition, and the log is one timeline of every
+change. A host adds tokens from outside under a request id. The
 commit that adds them steps the net until the selection policy picks nothing, and holds the new marking with the
 occurrences of its steps. It runs on Pi Durable (`@earendil-works/pi-durable`), the durable task and document
 library of [Pi](https://github.com/earendil-works/pi). The [Python Petrus](https://github.com/henriquebastos/petrus)
@@ -32,7 +34,8 @@ An example imports packages only through their root, and no package imports an e
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:
 `hamsterdan`, `hamsterdan-github` and `hamsterdan-cli`, in that order. They are reserved for a later host
-application. They do not exist in this repository yet.
+application, a pull-request review app that is on hold. They do not exist in this repository yet. See
+[issue #15](https://github.com/henriquebastos/petrus-ts/issues/15).
 
 ## Commands
 
