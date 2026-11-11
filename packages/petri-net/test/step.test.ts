@@ -7,7 +7,10 @@ import {
 	enabledElements,
 	fire,
 	fireStep,
+	indexMarking,
+	markingOfIndexed,
 	placeId,
+	stepIndexed,
 	transitionId,
 } from "../src/index.ts";
 import {
@@ -116,25 +119,31 @@ describe("fireStep, examples", () => {
 		expect(fireStep(net, idle, definitionOrder)).toStrictEqual({ fired: [], marking: idle });
 	});
 
-	test("computes keys linearly in the tokens on a place and the tokens taken, in one step", () => {
+	test("an indexed step does not key unchanged tokens or rerun cached guards", () => {
 		const size = 40;
 		const { tokens, reads } = keyCountingTokens(size);
+		let guards = 0;
 		const anything: ColourSet = { name: "Anything", contains: () => true };
 		const jobs: Place = { id: placeId("jobs"), colourSet: anything };
 		const takeJob = (name: string): Transition<"j"> => ({
 			id: transitionId(name),
 			variables: { j: anything },
-			guard: () => true,
+			guard: () => {
+				guards++;
+				return true;
+			},
 			inputs: [{ place: jobs, variables: ["j"] }],
 			outputs: [],
 		});
 		const jobsNet: Net = { places: [jobs], transitions: [takeJob("finish"), takeJob("drop")] };
-		const step = fireStep(jobsNet, { [jobs.id]: tokens }, definitionOrder);
-		// For each token: once for the place, once in each transition's enabled check, three times in allocation
-		// (the check for finish, the free count, the check for drop that fails) and twice in removing it.
-		expect(reads()).toBe(size * (1 + 2 + 3 + 2));
+		const indexed = indexMarking(jobsNet, { [jobs.id]: tokens });
+		const before = reads();
+		expect(guards).toBe(2 * size);
+		const step = stepIndexed(indexed, definitionOrder);
+		expect(reads() - before).toBe(0);
+		expect(guards).toBe(2 * size);
 		expect(step.fired.map(({ transition }) => transition)).toStrictEqual(tokens.map(() => transitionId("finish")));
-		expect(step.marking).toStrictEqual({});
+		expect(markingOfIndexed(step.indexed)).toStrictEqual({});
 	});
 
 	test("a policy that names a transition outside the net is a bug, so it throws", () => {

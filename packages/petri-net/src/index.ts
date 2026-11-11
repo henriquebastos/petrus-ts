@@ -3,6 +3,10 @@ export type { NotABinding, NotEnabled, Shortfall } from "./fire.ts";
 export { enabledBindings, fire } from "./fire.ts";
 export type { PlaceId, TransitionId } from "./ids.ts";
 export { placeId, transitionId } from "./ids.ts";
+export type { IndexedMarking } from "./indexed-marking.ts";
+export { addTokensIndexed, clearJournalIndexed, indexMarking, markingOfIndexed } from "./indexed-marking.ts";
+export { enabledElementsIndexed, stepIndexed } from "./indexed-step.ts";
+export type { MarkingJournalOp } from "./marking-journal.ts";
 export type { Marking } from "./marking.ts";
 export { addTokens, emptyMarking, removeTokens, tokensAt } from "./marking.ts";
 export type {

@@ -31,6 +31,16 @@ describe("netProblems", () => {
 		]);
 	});
 
+	test("reports a join key for an undeclared variable", () => {
+		const wrong: Transition = { ...move("joined"), joinKeys: { ghost: () => "", x: () => "" } };
+		expect(netProblems({ places: [a], transitions: [wrong] })).toStrictEqual([
+			"joined: joinKeys variable ghost is not declared",
+		]);
+		expect(
+			netProblems({ places: [a], transitions: [{ ...move("joined"), joinKeys: { x: () => "" } }] }),
+		).toStrictEqual([]);
+	});
+
 	test("reports an arc to a place that is not in the net", () => {
 		const elsewhere: Place = { id: placeId("elsewhere"), colourSet: number };
 		const lost: Transition<"x"> = { ...move("lost"), outputs: [{ place: elsewhere, expression: () => [] }] };

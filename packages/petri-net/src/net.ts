@@ -55,10 +55,16 @@ export type Transition<V extends string = string> = {
 	/** Each variable with its colour set. A variable's colour set is the colour set of each place it takes from. */
 	readonly variables: Readonly<Record<V, ColourSet>>;
 	/**
-	 * The condition a binding must meet. A transition with no condition has `() => true`. The binding's values may
-	 * have another key order than the tokens on the place, so it compares tokens by value, for example with `tokenKey`.
+	 * The condition a binding must meet. A transition with no condition has `() => true`.
+	 * It must be pure and deterministic. The indexed engine caches its result until a representative changes.
+	 * It may inspect property order. For JSON-value equality regardless of property order, use `tokenKey`.
 	 */
 	readonly guard: (binding: Binding<V>) => boolean;
+	/**
+	 * Pure, deterministic join keys. A true guard must imply equal keys for all listed variables.
+	 * An incorrect declaration silently omits bindings in the indexed engine. The net author must prove this contract.
+	 */
+	readonly joinKeys?: Partial<Record<V, (value: Token) => string>>;
 	readonly inputs: readonly InputArc<V>[];
 	readonly outputs: readonly OutputArc<V>[];
 };

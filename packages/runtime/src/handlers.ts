@@ -110,6 +110,7 @@ export function withHandlers(net: Net, transitions: readonly HandlerTransition[]
 type Parts = { readonly places: readonly Place[]; readonly transitions: readonly Transition[] };
 
 function expand(handler: HandlerTransition): Parts {
+	const { variants, ...transition } = handler;
 	const busy: Place = {
 		id: busyPlaceId(handler.id),
 		colourSet: { name: `${handler.id} binding`, contains: (token) => isBindingOf(handler, token) },
@@ -119,13 +120,10 @@ function expand(handler: HandlerTransition): Parts {
 		colourSet: { name: `${handler.id} result`, contains: (token) => parseResult(handler, token) !== undefined },
 	};
 	const start: Transition = {
-		id: handler.id,
-		variables: handler.variables,
-		guard: handler.guard,
-		inputs: handler.inputs,
+		...transition,
 		outputs: [{ place: busy, expression: (binding) => [binding] }],
 	};
-	const ends = Object.entries(handler.variants).map(([name, variant]) => end(handler, name, variant, busy, result));
+	const ends = Object.entries(variants).map(([name, variant]) => end(handler, name, variant, busy, result));
 	return { places: [busy, result], transitions: [start, ...ends] };
 }
 
@@ -140,6 +138,7 @@ function end(
 		id: transitionId(`${handler.id}:${name}`),
 		variables: { busy: busy.colourSet, result: result.colourSet },
 		guard: ({ busy: started, result: ended }) => endsRun(handler, name, started, ended),
+		joinKeys: { busy: tokenKey, result: (token) => tokenKey(resultFields(token)?.binding ?? null) },
 		inputs: [
 			{ place: busy, variables: ["busy"] },
 			{ place: result, variables: ["result"] },

@@ -14,6 +14,11 @@ export function netProblems(net: Net): readonly string[] {
 		...duplicateIds(net.transitions.map((transition) => transition.id)),
 		...net.transitions.flatMap((transition) => arcProblems(net, transition)),
 		...net.transitions.flatMap(variableProblems),
+		...net.transitions.flatMap((transition) =>
+			Object.keys(transition.joinKeys ?? {})
+				.filter((name) => !Object.hasOwn(transition.variables, name))
+				.map((name) => `${transition.id}: joinKeys variable ${name} is not declared`),
+		),
 	];
 }
 

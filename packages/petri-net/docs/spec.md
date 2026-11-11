@@ -1,10 +1,9 @@
 # petri-net specification
 
-The package is a coloured Petri net in the sense of Jensen and Kristensen, _Coloured Petri Nets_ (2009),
-definition 4.2. It keeps their words. The core rule:
+The package follows Jensen and Kristensen, _Coloured Petri Nets_ (2009), definition 4.2:
 
-> A binding element (a transition and a binding of its variables) fires only when its guard holds and each input
-> place holds the tokens that its input arcs take. Firing returns a new marking and never changes the marking it reads.
+> A binding element fires only when its guard holds and each input place holds the tokens its arcs take.
+> Pure firing returns a new marking without changing its input.
 
 [steps.md](steps.md) covers steps of many binding elements.
 
@@ -17,6 +16,7 @@ definition 4.2. It keeps their words. The core rule:
 - A **place** holds a multiset of tokens of its colour set. A `PlaceId` names it.
 - A **transition** has **variables**, each with a colour set, a **guard**, input arcs and output arcs.
   A `TransitionId` names it.
+  Guards must be pure and deterministic. The indexed engine caches each candidate's guard and input demand.
 - An **input arc** is a variable input arc or an expression input arc. Two arcs from the same place add up.
 - A **variable input arc** (`VariableInputArc`) lists variables. It takes one token for each entry: the value of
   that variable. A variable listed twice takes two equal tokens.
@@ -24,8 +24,8 @@ definition 4.2. It keeps their words. The core rule:
   binding.
 - An **arc expression** is a function from the binding to tokens. It must be pure and deterministic.
   An output arc has one; it gives the tokens it returns.
-  A guard and an arc expression get the binding's values, whose key order may differ from the tokens on the place,
-  so they compare tokens by value, for example with `tokenKey`.
+  Guards and expressions may inspect the representative's property order. Use `tokenKey` for JSON-value equality
+  regardless of property order.
 - A **binding** gives each variable of one transition a value of its colour set, and the guard is true for it.
   A transition and a binding form a **binding element**.
 - A **marking** is the multiset of tokens on each place, kept in the order the tokens arrived.

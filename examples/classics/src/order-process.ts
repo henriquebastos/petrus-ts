@@ -91,11 +91,18 @@ function side(id: string, from: Place, place: Place, ok: string, failed: string)
 const checkStock = side("CheckStock", toCheck, stocked, "reserved", "missing");
 const charge = side("Charge", toCharge, billed, "charged", "declined");
 
+function orderKey(token: Token): string {
+	return orderOf(token) ?? "";
+}
+
+const joinKeys = { s: orderKey, b: orderKey };
+
 /** Ships an order whose stock is reserved and whose payment is taken (the join). */
 const ship: Transition<"s" | "b"> = {
 	id: transitionId("Ship"),
 	variables: { s: outcome, b: outcome },
 	guard: ({ s, b }) => sameOrder(s, b) && succeeded(s) && succeeded(b),
+	joinKeys,
 	inputs: [
 		{ place: stocked, variables: ["s"] },
 		{ place: billed, variables: ["b"] },
@@ -108,6 +115,7 @@ const undo: HandlerTransition<"s" | "b"> = {
 	id: transitionId("Undo"),
 	variables: { s: outcome, b: outcome },
 	guard: ({ s, b }) => sameOrder(s, b) && !(succeeded(s) && succeeded(b)),
+	joinKeys,
 	inputs: [
 		{ place: stocked, variables: ["s"] },
 		{ place: billed, variables: ["b"] },

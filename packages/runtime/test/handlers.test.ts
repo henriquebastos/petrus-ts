@@ -1,6 +1,16 @@
 import fc from "fast-check";
 import type { Binding, Token, Transition } from "@petrus/petri-net";
-import { fire, markingProblems, netProblems, placeId, transitionId } from "@petrus/petri-net";
+import {
+	enabledElements,
+	enabledElementsIndexed,
+	fire,
+	indexMarking,
+	markingProblems,
+	netProblems,
+	placeId,
+	tokenKey,
+	transitionId,
+} from "@petrus/petri-net";
 import { describe, expect, onTestFinished, test } from "vitest";
 import type {
 	Handler,
@@ -178,6 +188,32 @@ describe("withHandlers", () => {
 		).toBe(false);
 		expect(done.guard({ busy: binding, result: "not a result" })).toBe(false);
 		expect(done.guard({ busy: { s: "slot", j: "j1" }, result: ended })).toBe(true);
+	});
+
+	test("handler joins preserve matching results and busy arrival order", () => {
+		fc.assert(
+			fc.property(fc.uniqueArray(fc.nat({ max: 20 }), { minLength: 2, maxLength: 10 }), (ids) => {
+				const bindings = ids.map((id) => ({ j: `j${String(id)}`, s: "slot" }));
+				const marking = {
+					[busy]: bindings,
+					[result]: [...bindings]
+						.reverse()
+						.map(({ j, s }) => resultToken({ s, j }, { variant: "done", value: "receipt 1" })),
+				};
+				expect(enabledElementsIndexed(indexMarking(plainJobsNet, marking))).toStrictEqual(
+					enabledElements(plainJobsNet, marking),
+				);
+				const keys = transitionOf("work:done").joinKeys;
+				bindings.forEach((binding) => {
+					expect(keys?.busy?.(binding)).toBe(
+						keys?.result?.(resultToken(binding, { variant: "done", value: "receipt 1" })),
+					);
+				});
+			}),
+		);
+		expect(transitionOf("work:done").joinKeys?.result?.(null)).toBe(tokenKey(null));
+		const joinKeys = { j: tokenKey };
+		expect(withHandlers(jobsNet, [{ ...work, joinKeys }]).transitions[0]?.joinKeys).toBe(joinKeys);
 	});
 
 	test("an end's arcs throw on a token outside their places, which is a bug in the runtime", () => {

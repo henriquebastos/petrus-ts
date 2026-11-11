@@ -13,6 +13,7 @@ handlers, a choice made by handler results, one end place, and cancellation by t
   `Billed`: `[order, true]` for a success, `[order, false]` for a refusal or an abort.
 - `Ship` is the join: it takes both outcomes of one order when both are true, and puts `[order, "shipped"]` on
   `Done`.
+  Both `Ship` and `Undo` declare join keys by order id, so enabling pairs only outcomes of the same order.
 - `Undo` is a handler transition that takes both outcomes of one order when one of them is false. Its handler asks
   the shop to release the reservation and refund the payment, those that were made. Then `[order, "cancelled"]`
   goes on `Done`.

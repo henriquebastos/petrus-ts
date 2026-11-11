@@ -24,8 +24,8 @@ test("an `export *` of a node:sqlite module in the petri-net root breaks the pet
 	);
 	const run = await runScript(script, [], root);
 	expect(run.exitCode).toBe(1);
-	expect(run.stderr).toContain("packages/petri-net/src/index.ts reaches 10 files, budget 9");
-	expect(run.stderr).toContain("packages/runtime/src/index.ts reaches 21 files, budget 20");
+	expect(run.stderr).toContain("packages/petri-net/src/index.ts reaches 16 files, budget 15");
+	expect(run.stderr).toContain("packages/runtime/src/index.ts reaches 27 files, budget 26");
 	expect(run.stderr).toContain("packages/petri-net/src/index.ts must not reach /^node:/:\n    node:sqlite");
 	expect(run.stderr).toContain("packages/runtime/src/index.ts must not reach /^node:/:\n    node:sqlite");
 });

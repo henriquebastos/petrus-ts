@@ -21,13 +21,12 @@ The core rule:
   - for each variant `v`, the transition `t:v`, which takes a binding from `t:busy` and a result with variant `v`
     for that binding from `t:result`, and produces the variant's outputs.
 
-  The input tokens stay taken while the work runs, so a resource token is held for the whole work. The net checks
-  and the replay are those of the petri-net spec.
+  Input tokens stay taken throughout the work. The petri-net checks and replay still apply.
+  The start keeps declared join keys. Ends join busy bindings to result bindings, preserving `{busy, result}` occurrences.
 - An **operation** is the work that one occurrence of `t` started. Its id is `t/<position of the occurrence in the
   log>`, so it stays the same after a restart. It is **in flight** until the log holds its result.
   `inFlight(context)` lists the operations in flight, in log order.
-- A **handler task** runs one operation. It is a Durable task of kind `petrus.operation:<net name>` in the net
-  instance's conversation; the `extension` of `createRuntime` holds this kind. Its phase `run` calls the
+- A **handler task**, kind `petrus.operation:<net name>`, belongs to the instance's conversation. Its phase `run` calls the
   handler with the operation's binding and id. Then one commit records the result, steps the net, and ends the
   task as `completed`. Its time comes from the Harness's clock. A handler can also return a
   **delayed result**: see [delays.md](delays.md).
@@ -48,6 +47,7 @@ Paths are relative to this package.
   declared results".
 - An end fires only for a result of its own variant and binding, in any key order.
   Test: `test/handlers.test.ts` "an end fires only for a result of its own variant and its own run".
+- Test: `test/handlers.test.ts` "handler joins preserve matching results and busy arrival order".
 - An operation's id is its transition and its position in the log, and it is in flight until the log holds its
   result. Tests: `test/handlers.test.ts` "names each operation by its transition and its position in the log",
   "an operation is in flight until the log holds its result".

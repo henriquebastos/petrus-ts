@@ -8,6 +8,9 @@
 export function addTokens(marking: Marking, place: PlaceId, tokens: readonly Token[]): Marking;
 
 // @public
+export function addTokensIndexed(indexed: IndexedMarking, place: PlaceId, tokens: readonly Token[]): IndexedMarking;
+
+// @public
 export type Binding<V extends string = string> = Readonly<Record<V, Token>>;
 
 // @public
@@ -18,6 +21,9 @@ export type BindingElement = {
 
 // @public
 export function bindingProblems(transition: Transition, binding: Binding): readonly string[];
+
+// @public
+export function clearJournalIndexed(indexed: IndexedMarking): IndexedMarking;
 
 // @public
 export type ColourSet = {
@@ -36,6 +42,9 @@ export function enabledBindings(transition: Transition, marking: Marking): reado
 
 // @public
 export function enabledElements(net: Net, marking: Marking): readonly BindingElement[];
+
+// @public
+export function enabledElementsIndexed(indexed: IndexedMarking): readonly BindingElement[];
 
 // @public
 export type Err<TError> = {
@@ -66,10 +75,35 @@ export type FiredStep = {
 export function fireStep(net: Net, marking: Marking, policy: SelectionPolicy): FiredStep;
 
 // @public
+export type IndexedMarking = {
+    readonly journal: readonly MarkingJournalOp[];
+};
+
+// @public
+export function indexMarking(net: Net, marking: Marking): IndexedMarking;
+
+// @public
 export type InputArc<V extends string = string> = VariableInputArc<V> | ExpressionInputArc<V>;
 
 // @public
 export type Marking = Readonly<Record<PlaceId, readonly Token[]>>;
+
+// @public
+export type MarkingJournalOp = {
+    readonly kind: "remove";
+    readonly place: PlaceId;
+    readonly index: number;
+} | {
+    readonly kind: "append";
+    readonly place: PlaceId;
+    readonly tokens: readonly Token[];
+} | {
+    readonly kind: "drop";
+    readonly place: PlaceId;
+};
+
+// @public
+export function markingOfIndexed(indexed: IndexedMarking): Marking;
 
 // @public
 export function markingProblems(net: Net, marking: Marking): readonly string[];
@@ -143,6 +177,12 @@ export type Shortfall = {
 };
 
 // @public
+export function stepIndexed(indexed: IndexedMarking, policy: SelectionPolicy): {
+    readonly indexed: IndexedMarking;
+    readonly fired: readonly BindingElement[];
+};
+
+// @public
 export type Token = null | boolean | number | string | readonly Token[] | {
     readonly [key: string]: Token;
 };
@@ -158,6 +198,7 @@ export type Transition<V extends string = string> = {
     readonly id: TransitionId;
     readonly variables: Readonly<Record<V, ColourSet>>;
     readonly guard: (binding: Binding<V>) => boolean;
+    readonly joinKeys?: Partial<Record<V, (value: Token) => string>>;
     readonly inputs: readonly InputArc<V>[];
     readonly outputs: readonly OutputArc<V>[];
 };

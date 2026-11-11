@@ -126,7 +126,7 @@ function taken(transition: Transition, arc: InputArc, binding: Binding): readonl
 }
 
 /** The tokens of an input or output arc expression. A token outside the place's colour set is a bug in the net. */
-function expressionTokens(
+export function expressionTokens(
 	transition: Transition,
 	side: "input" | "output",
 	arc: ExpressionInputArc | OutputArc,
