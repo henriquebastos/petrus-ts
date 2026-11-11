@@ -6,3 +6,4 @@ node_modules/
 /.fallow/
 *.tsbuildinfo
 .DS_Store
+/.amp/portals/

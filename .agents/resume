@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+# Knip's parser reserves 6 GiB of virtual memory without using that much RAM.
+# Kernel settings must be restored when an orb wakes.
+if [[ "$(cat /proc/sys/vm/overcommit_memory)" != 1 ]]; then
+  sudo sysctl -w vm.overcommit_memory=1
+fi
+# Dependencies persist in the snapshot. Resume checks them without installing.
+test "$(node --version)" = "v$(cat .node-version)"
+test -d node_modules
