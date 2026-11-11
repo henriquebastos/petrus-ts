@@ -1,10 +1,12 @@
 import fc from "fast-check";
 import type { Binding, Token, Transition } from "@petrus/petri-net";
 import {
+	addTokensIndexed,
 	enabledElements,
 	enabledElementsIndexed,
 	fire,
 	indexMarking,
+	markingOfIndexed,
 	markingProblems,
 	netProblems,
 	placeId,
@@ -216,6 +218,33 @@ describe("withHandlers", () => {
 		expect(withHandlers(jobsNet, [{ ...work, joinKeys }]).transitions[0]?.joinKeys).toBe(joinKeys);
 	});
 
+	test("one handler result checks only its matching run, regardless of the number of busy runs", () => {
+		fc.assert(
+			fc.property(fc.integer({ min: 2, max: 30 }), (size) => {
+				let guards = 0;
+				const net = {
+					...plainJobsNet,
+					transitions: plainJobsNet.transitions.map((transition) => ({
+						...transition,
+						guard: (binding: Binding) => {
+							guards += 1;
+							return transition.guard(binding);
+						},
+					})),
+				};
+				const bindings = Array.from({ length: size }, (_, j) => ({ j: `j${String(j)}`, s: "slot" }));
+				const matching = { s: "slot", j: `j${String(size - 1)}` };
+				const ended = resultToken(matching, { variant: "done", value: "receipt 1" });
+				const indexed = indexMarking(net, { [busy]: bindings });
+				const arrived = addTokensIndexed(indexed, result, [ended]);
+				expect(enabledElementsIndexed(arrived)).toStrictEqual([
+					{ transition: transitionId("work:done"), binding: { busy: matching, result: ended } },
+				]);
+				expect(guards).toBeLessThanOrEqual(2);
+			}),
+		);
+	});
+
 	test("an end's arcs throw on a token outside their places, which is a bug in the runtime", () => {
 		const [arc] = transitionOf("work:done").outputs;
 		const binding: Binding = { j: "j1", s: "slot" };
@@ -277,7 +306,14 @@ describe("operations", () => {
 			tokens: { [result]: [resultToken(started.binding, value)] },
 			at: 9,
 		};
-		expect(admitResult(plainJobsNet, handlerIds, viewOf(state), "work/0", value, 9)).toStrictEqual({
+		const admitted = admitResult(plainJobsNet, handlerIds, viewOf(state), "work/0", value, 9);
+		expect(
+			admitted.kind === "applied" && {
+				kind: admitted.kind,
+				ingress: admitted.ingress,
+				marking: markingOfIndexed(admitted.indexed),
+			},
+		).toStrictEqual({
 			kind: "applied",
 			ingress,
 			marking: { [busy]: [started.binding], [result]: ingress.tokens[result] },

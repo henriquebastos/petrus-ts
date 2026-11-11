@@ -1,8 +1,9 @@
 import type { ConversationId, Tx } from "@earendil-works/pi-durable";
-import type { Marking, Net, SelectionPolicy, TransitionId } from "@petrus/petri-net";
-import { markingProblems } from "@petrus/petri-net";
+import type { IndexedMarking, Net, SelectionPolicy, TransitionId } from "@petrus/petri-net";
+import { clearJournalIndexed, markingProblems } from "@petrus/petri-net";
 import type { Admitted } from "./admit.ts";
 import { advanceUntilQuiet } from "./advance.ts";
+import type { NetInstanceCache } from "./net-instance-cache.ts";
 import type { NetInstanceRecord } from "./net-instance-record.ts";
 import { netInstanceRecord, readNetInstance, readNetInstanceView, writeNetInstance } from "./net-instance-record.ts";
 import type { Ingress, LogEntry, NetInstanceState, Occurrence } from "./net-instance.ts";
@@ -29,6 +30,7 @@ export type NetInstanceParts = {
 	readonly policy: SelectionPolicy;
 	readonly handlerIds: ReadonlySet<TransitionId>;
 	readonly start: StartOperation;
+	readonly cache: NetInstanceCache;
 };
 
 /** What a commit did: the ingress of its change, and what its steps fired. A repeated change fires nothing. */
@@ -43,7 +45,7 @@ type Planned =
 			readonly kind: "applied";
 			readonly ingress: Ingress;
 			readonly fired: readonly Occurrence[];
-			readonly marking: Marking;
+			readonly indexed: IndexedMarking;
 			readonly appended: readonly LogEntry[];
 			readonly started: readonly Operation[];
 	  };
@@ -57,14 +59,14 @@ export function plan(parts: NetInstanceParts, view: NetInstanceView, admitted: A
 	if (admitted.kind === "repeated") {
 		return admitted;
 	}
-	const stepped = advanceUntilQuiet(parts.net, parts.policy, admitted.marking, at);
+	const stepped = advanceUntilQuiet(parts.policy, admitted.indexed, at);
 	const appended = [admitted.ingress, ...stepped.fired];
 	const started = operationsStartedFrom(parts.handlerIds, appended, view.logLength);
 	return {
 		kind: "applied",
 		ingress: admitted.ingress,
 		fired: stepped.fired,
-		marking: stepped.marking,
+		indexed: stepped.indexed,
 		appended,
 		started,
 	};
@@ -83,7 +85,7 @@ export async function commitToNetInstance(
 	at: number,
 ): Promise<Committed> {
 	const draft = await tx.doc(netInstanceRecord, conversationId);
-	const planned = commitToRecord(parts, draft, change, at);
+	const planned = commitToRecord(parts, draft, change, at, conversationId);
 	if (planned.kind === "repeated") {
 		return { ingress: planned.ingress, fired: [] };
 	}
@@ -97,11 +99,27 @@ export async function commitToNetInstance(
  * The part of a commit on the stored instance: it reads a checked view, plans the change, and writes an applied
  * change. It reads the marking, the length of the log, and only the log entries that the change asks for.
  */
-export function commitToRecord(parts: NetInstanceParts, draft: NetInstanceRecord, change: Change, at: number): Planned {
-	const view = checked(parts, draft, readNetInstanceView);
+export function commitToRecord(
+	parts: NetInstanceParts,
+	draft: NetInstanceRecord,
+	change: Change,
+	at: number,
+	conversationId: ConversationId,
+): Planned {
+	const cached = parts.cache.take(conversationId);
+	checkName(parts, draft);
+	const stored = readNetInstanceView(draft);
+	const indexed = draft.stamp !== "" && cached?.stamp === draft.stamp ? cached.indexed : stored.indexed(parts.net);
+	const view = { ...stored, indexed: () => indexed };
 	const planned = plan(parts, view, change(view), at);
 	if (planned.kind === "applied") {
-		writeNetInstance(draft, parts.name, planned.marking, planned.appended);
+		writeNetInstance(draft, parts.name, planned.indexed.journal, planned.appended);
+		const committed = clearJournalIndexed(planned.indexed);
+		draft.stamp = parts.cache.nextStamp();
+		parts.cache.put(conversationId, { stamp: draft.stamp, indexed: committed });
+		return { ...planned, indexed: committed };
+	} else {
+		parts.cache.put(conversationId, { stamp: draft.stamp, indexed });
 	}
 	return planned;
 }
@@ -111,21 +129,17 @@ export function commitToRecord(parts: NetInstanceParts, draft: NetInstanceRecord
  * `markingProblems`), is a bug in the host or the store, so it throws.
  */
 export function checkedState(parts: NetInstanceParts, stored: Readonly<NetInstanceRecord>): NetInstanceState {
-	return checked(parts, stored, readNetInstance);
-}
-
-function checked<Read extends { readonly marking: Marking }>(
-	parts: NetInstanceParts,
-	stored: Readonly<NetInstanceRecord>,
-	read: (stored: Readonly<NetInstanceRecord>) => Read,
-): Read {
-	if (stored.net !== "" && stored.net !== parts.name) {
-		throw new BrokenNetInstance(`the conversation holds an instance of the net ${stored.net}, not ${parts.name}`);
-	}
-	const copy = read(stored);
+	checkName(parts, stored);
+	const copy = readNetInstance(stored);
 	const wrong = markingProblems(parts.net, copy.marking);
 	if (wrong.length > 0) {
 		throw new BrokenNetInstance(`invalid stored marking: ${wrong.join("; ")}`);
 	}
 	return copy;
+}
+
+function checkName(parts: NetInstanceParts, stored: Readonly<NetInstanceRecord>): void {
+	if (stored.net !== "" && stored.net !== parts.name) {
+		throw new BrokenNetInstance(`the conversation holds an instance of the net ${stored.net}, not ${parts.name}`);
+	}
 }

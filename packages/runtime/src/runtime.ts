@@ -4,6 +4,7 @@ import { defineExtension } from "@earendil-works/pi-durable";
 import type { Net, SelectionPolicy } from "@petrus/petri-net";
 import { netProblems } from "@petrus/petri-net";
 import { admit } from "./admit.ts";
+import { createNetInstanceCache } from "./net-instance-cache.ts";
 import { netInstanceRecord } from "./net-instance-record.ts";
 import { createOperationRun } from "./operation-run.ts";
 import type { Handler, HandlerResult } from "./handlers.ts";
@@ -63,6 +64,8 @@ export type Runtime = {
  */
 export type RuntimeOptions = {
 	readonly name: string;
+	/** Unique for this runtime object, including across process restarts. A host can use a random UUID. */
+	readonly nonce: string;
 	readonly net: Net;
 	readonly policy: SelectionPolicy;
 	readonly clock: Clock;
@@ -88,6 +91,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
 	const { task, parts, taskOf, abortable } = createOperationRun({
 		name,
+		cache: createNetInstanceCache(options.nonce),
 		net,
 		policy,
 		handlerIds,

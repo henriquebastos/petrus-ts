@@ -3,6 +3,7 @@
 import type { Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
 import { createRuntime } from "../../packages/runtime/src/index.ts";
 import { admit } from "../../packages/runtime/src/admit.ts";
+import { createNetInstanceCache } from "../../packages/runtime/src/net-instance-cache.ts";
 import { netInstanceRecord, writeNetInstance } from "../../packages/runtime/src/net-instance-record.ts";
 import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
 import { checkedState, plan } from "../../packages/runtime/src/net-instance-commit.ts";
@@ -12,6 +13,7 @@ export function createStaleReadRuntime(options: RuntimeOptions): Runtime {
 	const runtime = createRuntime(options);
 	const parts: NetInstanceParts = {
 		name: options.name,
+		cache: createNetInstanceCache(`${options.nonce}:fixture`),
 		net: options.net,
 		policy: options.policy,
 		handlerIds: new Set(),
@@ -29,7 +31,8 @@ export function createStaleReadRuntime(options: RuntimeOptions): Runtime {
 				return host.commit(async (tx) => {
 					const draft = await tx.doc(netInstanceRecord, conversationId);
 					if (planned.kind === "applied") {
-						writeNetInstance(draft, options.name, planned.marking, planned.appended);
+						draft.marking = stored?.marking ?? {};
+						writeNetInstance(draft, options.name, planned.indexed.journal, planned.appended);
 					}
 					return { ingress: planned.ingress, fired: planned.kind === "applied" ? planned.fired : [] };
 				}, context);

@@ -130,6 +130,7 @@ export type Runtime = {
 // @public
 export type RuntimeOptions = {
     readonly name: string;
+    readonly nonce: string;
     readonly net: Net;
     readonly policy: SelectionPolicy;
     readonly clock: Clock;

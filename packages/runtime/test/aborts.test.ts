@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import { tokenKey, tokensAt } from "@petrus/petri-net";
 import { describe, expect, onTestFinished, test } from "vitest";
 import type { Handler, NetInstance } from "../src/index.ts";
 import { busyPlaceId, createRuntime, withHandlers } from "../src/index.ts";
 import { createOperationRun } from "../src/operation-run.ts";
+import { createNetInstanceCache } from "../src/net-instance-cache.ts";
 import type { Disk, Process } from "./disk.ts";
 import { context, createClock, createDisk } from "./disk.ts";
 import {
@@ -193,6 +195,7 @@ describe("aborts", () => {
 		await instance.enqueue(jobsBatch(jobs, 101), context);
 		const run = createOperationRun({
 			...workOptions(handler, clock),
+			cache: createNetInstanceCache(randomUUID()),
 			net: withHandlers(workOptions(handler, clock).net, [work]),
 			handlerIds: new Set([work.id]),
 			handlers: [handler],

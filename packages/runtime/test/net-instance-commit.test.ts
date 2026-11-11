@@ -1,6 +1,9 @@
 import fc from "fast-check";
-import { definitionOrder } from "@petrus/petri-net";
+import { randomUUID } from "node:crypto";
+import { ROOT_CONVERSATION_ID } from "@earendil-works/pi-durable";
+import { definitionOrder, markingOfIndexed } from "@petrus/petri-net";
 import { describe, expect, test } from "vitest";
+import { createNetInstanceCache } from "../src/net-instance-cache.ts";
 import type { Batch } from "../src/index.ts";
 import { busyPlaceId } from "../src/index.ts";
 import { admit } from "../src/admit.ts";
@@ -14,6 +17,7 @@ import { firstBatch, plainJobsNet, queue, work } from "./handler-properties.ts";
 
 const parts: NetInstanceParts = {
 	name: "jobs",
+	cache: createNetInstanceCache(randomUUID()),
 	net: plainJobsNet,
 	policy: definitionOrder,
 	handlerIds: new Set([work.id]),
@@ -21,6 +25,7 @@ const parts: NetInstanceParts = {
 };
 
 const empty = viewOf({ marking: {}, log: [] });
+const conversation = ROOT_CONVERSATION_ID;
 
 describe("plan", () => {
 	test("steps a new change until the net is quiet and starts only the operations that its own steps started", () => {
@@ -28,10 +33,11 @@ describe("plan", () => {
 		expect(first.kind === "applied" && first.started).toStrictEqual([
 			{ id: "work/1", transition: work.id, binding: { j: "j1", s: "slot" } },
 		]);
-		const before = first.kind === "applied" ? viewOf({ marking: first.marking, log: first.appended }) : empty;
+		const before =
+			first.kind === "applied" ? viewOf({ marking: markingOfIndexed(first.indexed), log: first.appended }) : empty;
 		const late = { requestId: "late", tokens: { [queue.id]: ["j4"] } };
 		const second = plan(parts, before, admit(plainJobsNet, before, late, 2), 2);
-		expect(second).toMatchObject({
+		expect(second.kind === "applied" && { ...second, marking: markingOfIndexed(second.indexed) }).toMatchObject({
 			kind: "applied",
 			marking: {
 				[busyPlaceId(work.id)]: [
@@ -49,7 +55,8 @@ describe("plan", () => {
 
 	test("plans nothing for a repeated change and keeps its recorded ingress", () => {
 		const first = plan(parts, empty, admit(plainJobsNet, empty, firstBatch(["j1"]), 1), 1);
-		const view = first.kind === "applied" ? viewOf({ marking: first.marking, log: first.appended }) : empty;
+		const view =
+			first.kind === "applied" ? viewOf({ marking: markingOfIndexed(first.indexed), log: first.appended }) : empty;
 		const repeated = admit(plainJobsNet, view, firstBatch(["j1"]), 2);
 		expect(plan(parts, view, repeated, 2)).toStrictEqual(repeated);
 		expect(repeated.ingress.at).toBe(1);
@@ -66,9 +73,9 @@ function jobBatch(job: number): Batch {
  */
 function countedRecord(jobs: number): { readonly record: NetInstanceRecord; readonly reads: string[] } {
 	const record = netInstanceRecord.definition.initial();
-	commitToRecord(parts, record, (view) => admit(plainJobsNet, view, firstBatch(["j0"]), 0), 0);
+	commitToRecord(parts, record, (view) => admit(plainJobsNet, view, firstBatch(["j0"]), 0), 0, conversation);
 	for (let job = 1; job <= jobs; job += 1) {
-		commitToRecord(parts, record, (view) => admit(plainJobsNet, view, jobBatch(job), job), job);
+		commitToRecord(parts, record, (view) => admit(plainJobsNet, view, jobBatch(job), job), job, conversation);
 	}
 	const reads: string[] = [];
 	const log = new Proxy(record.log, {
@@ -90,7 +97,13 @@ describe("the cost of a commit", () => {
 			fc.property(fc.integer({ min: 0, max: 30 }), fc.constantFrom("job-new", "constructor"), (jobs, requestId) => {
 				const { record, reads } = countedRecord(jobs);
 				const batch = { requestId, tokens: { [queue.id]: ["j99"] } };
-				const planned = commitToRecord(parts, record, (view) => admit(plainJobsNet, view, batch, 99), 99);
+				const planned = commitToRecord(
+					parts,
+					record,
+					(view) => admit(plainJobsNet, view, batch, 99),
+					99,
+					conversation,
+				);
 				expect({ kind: planned.kind, reads }).toStrictEqual({ kind: "applied", reads: [] });
 			}),
 		);
@@ -113,6 +126,7 @@ describe("the cost of a commit", () => {
 						record,
 						(view) => admit(plainJobsNet, view, jobBatch(job), 99),
 						99,
+						conversation,
 					);
 					expect({ kind: planned.kind, at: planned.ingress.at, reads }).toStrictEqual({
 						kind: "repeated",
@@ -132,11 +146,11 @@ describe("the cost of a commit", () => {
 					(variant: string, value: string): Change =>
 					(view) =>
 						admitResult(plainJobsNet, parts.handlerIds, view, "work/1", { variant, value }, 99);
-				const first = commitToRecord(parts, record, result("done", "receipt 1"), 99);
+				const first = commitToRecord(parts, record, result("done", "receipt 1"), 99, conversation);
 				expect({ kind: first.kind, reads }).toStrictEqual({ kind: "applied", reads: ["1"] });
 				const resultIndex = record.log.length - (first.kind === "applied" ? first.appended.length : 0);
 				reads.length = 0;
-				const second = commitToRecord(parts, record, result("refused", "refused"), 100);
+				const second = commitToRecord(parts, record, result("refused", "refused"), 100, conversation);
 				expect({ kind: second.kind, reads }).toStrictEqual({ kind: "repeated", reads: ["1", String(resultIndex)] });
 			}),
 		);

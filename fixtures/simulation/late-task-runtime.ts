@@ -4,6 +4,7 @@ import type { Operation, Runtime, RuntimeOptions } from "../../packages/runtime/
 import { createRuntime, withHandlers } from "../../packages/runtime/src/index.ts";
 import { admit } from "../../packages/runtime/src/admit.ts";
 import { createOperationRun } from "../../packages/runtime/src/operation-run.ts";
+import { createNetInstanceCache } from "../../packages/runtime/src/net-instance-cache.ts";
 import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
 import { commitToNetInstance } from "../../packages/runtime/src/net-instance-commit.ts";
 
@@ -12,7 +13,8 @@ export function createLateTaskRuntime(options: RuntimeOptions): Runtime {
 	const handlers = options.handlers ?? [];
 	const net = withHandlers(options.net, handlers.map((handler) => handler.transition));
 	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
-	const { start } = createOperationRun({ ...options, net, handlerIds, handlers }).parts;
+	const cache = createNetInstanceCache(`${options.nonce}:fixture`);
+	const { start } = createOperationRun({ ...options, cache, net, handlerIds, handlers }).parts;
 	return {
 		extension: runtime.extension,
 		instance: (host, conversationId) => ({
@@ -22,6 +24,7 @@ export function createLateTaskRuntime(options: RuntimeOptions): Runtime {
 				const started: Operation[] = [];
 				const parts: NetInstanceParts = {
 					name: options.name,
+					cache,
 					net,
 					policy: options.policy,
 					handlerIds,

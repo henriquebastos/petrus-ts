@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { Marking, Token } from "@petrus/petri-net";
 import { definitionOrder, tokensAt } from "@petrus/petri-net";
@@ -40,6 +41,7 @@ function workshop(pause: () => Promise<void>): Workshop & { readonly uses: () =>
 function runtimeOf(shop: Workshop): Runtime {
 	return createRuntime({
 		name: "producer-consumer",
+		nonce: randomUUID(),
 		net: producerConsumer,
 		policy: definitionOrder,
 		clock,

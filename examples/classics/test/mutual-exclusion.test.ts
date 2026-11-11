@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { Marking, Token } from "@petrus/petri-net";
 import { definitionOrder, tokensAt } from "@petrus/petri-net";
@@ -56,6 +57,7 @@ function sharedResource(pause: () => Promise<void>): SharedResource {
 function runtimeOf(resource: Resource): Runtime {
 	return createRuntime({
 		name: "mutual-exclusion",
+		nonce: randomUUID(),
 		net: mutualExclusion,
 		policy: definitionOrder,
 		clock,

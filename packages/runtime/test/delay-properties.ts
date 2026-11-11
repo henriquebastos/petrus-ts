@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { ColourSet, Net, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, placeId, tokenKey, tokensAt, transitionId } from "@petrus/petri-net";
@@ -59,6 +60,7 @@ export function elapsedAfter(r: Token, delayMs: number): DelayedResult {
 export function remindersOptions(handler: Handler, clock: TestClock): RuntimeOptions {
 	return {
 		name: "reminders",
+		nonce: randomUUID(),
 		net: remindersNet,
 		policy: definitionOrder,
 		clock,

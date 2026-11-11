@@ -2,10 +2,9 @@
 
 The core rule:
 
-> A handler transition fires like any transition and starts an operation, and the same commit creates the
-> operation's task. The task runs the handler outside the net. Then one commit puts the result on the transition's
-> result place under the request id `result:<operation id>`, steps the net until it is quiet, and ends the task.
-> After a crash or most throws the handler runs again: it runs at least once, and only its first result counts.
+> Firing a handler transition creates its operation and task atomically. The task runs the handler outside the net.
+> One commit records its result under `result:<operation id>`, steps until quiet, and ends the task.
+> Handlers run at least once. Only the first result counts.
 
 ## 1 Terms
 
@@ -48,6 +47,8 @@ Paths are relative to this package.
 - An end fires only for a result of its own variant and binding, in any key order.
   Test: `test/handlers.test.ts` "an end fires only for a result of its own variant and its own run".
 - Test: `test/handlers.test.ts` "handler joins preserve matching results and busy arrival order".
+- The indexed engine checks at most one end candidate per variant for each result, regardless of busy-run count.
+  Test: `test/handlers.test.ts` "one handler result checks only its matching run, regardless of the number of busy runs".
 - An operation's id is its transition and its position in the log, and it is in flight until the log holds its
   result. Tests: `test/handlers.test.ts` "names each operation by its transition and its position in the log",
   "an operation is in flight until the log holds its result".
@@ -116,7 +117,7 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
   the next run of the operation can overlap it: two holders are inside at once. See section 5 of
   [examples/classics/README.md](../../../examples/classics/README.md).
 - A handler has no timeout. A wait inside a handler does not survive a crash; a delayed result does.
-- Without an `aborted` variant, an aborted operation holds its tokens until an operator calls `resolve`.
+- Without `aborted`, an aborted operation holds its tokens until an operator supplies a result through [`resolve`](broken-instances.md).
 - Durable parks a task that a crash cuts off `restartLimit` times in a row (default 5). Its operation stays in
   flight until the host calls `Harness.retryTask`.
 - A throw that comes back each time, such as a result that does not fit, makes the task run again with no limit.

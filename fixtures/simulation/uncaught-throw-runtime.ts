@@ -5,6 +5,7 @@ import { createRuntime, withHandlers } from "../../packages/runtime/src/index.ts
 import { transitionId } from "../../packages/petri-net/src/index.ts";
 import { json } from "../../packages/runtime/src/net-instance-record.ts";
 import { createOperationRun } from "../../packages/runtime/src/operation-run.ts";
+import { createNetInstanceCache } from "../../packages/runtime/src/net-instance-cache.ts";
 import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
 import { commitToNetInstance } from "../../packages/runtime/src/net-instance-commit.ts";
 import { admitResult } from "../../packages/runtime/src/operations.ts";
@@ -14,8 +15,9 @@ export function createUncaughtThrowRuntime(options: RuntimeOptions): Runtime {
 	const handlers = options.handlers ?? [];
 	const net = withHandlers(options.net, handlers.map((handler) => handler.transition));
 	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
-	const real = createOperationRun({ ...options, net, handlerIds, handlers });
-	const parts: NetInstanceParts = { name: options.name, net, policy: options.policy, handlerIds, start: real.parts.start };
+	const cache = createNetInstanceCache(`${options.nonce}:fixture`);
+	const real = createOperationRun({ ...options, cache, net, handlerIds, handlers });
+	const parts: NetInstanceParts = { name: options.name, cache, net, policy: options.policy, handlerIds, start: real.parts.start };
 	const task: typeof real.task = {
 		definition: {
 			...real.task.definition,

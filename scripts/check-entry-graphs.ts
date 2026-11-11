@@ -15,10 +15,12 @@ type Budget = { readonly maxFiles: number; readonly forbid: readonly RegExp[] };
 /** Budgets are the current graph sizes. Raise one on purpose, in the same change that grows the graph. */
 const budgets: Readonly<Record<string, Budget>> = {
 	"packages/petri-net/src/index.ts": {
+		// The indexed engine adds six value modules beside the unchanged pure oracle.
 		maxFiles: 15,
 		forbid: [/^node:/, /node_modules\//, /^packages\/(?!petri-net\/)/],
 	},
-	"packages/runtime/src/index.ts": { maxFiles: 26, forbid: [/^node:/] },
+	// The engine adds six modules; the instance cache and ingress buckets add two more.
+	"packages/runtime/src/index.ts": { maxFiles: 28, forbid: [/^node:/] },
 };
 
 const cruiseOutput = Type.Object({

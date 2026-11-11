@@ -1,4 +1,5 @@
-import type { Marking } from "@petrus/petri-net";
+import type { IndexedMarking, Net } from "@petrus/petri-net";
+import { indexMarking } from "@petrus/petri-net";
 import type { Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
 
 /**
@@ -6,8 +7,8 @@ import type { Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
  * for. A view of a stored instance reads one entry for each lookup, so the cost of a commit does not grow with the log.
  */
 export type NetInstanceView = {
-	/** The marking of the instance. */
-	readonly marking: Marking;
+	/** Builds the index only when a change needs the marking. The caller takes ownership. */
+	readonly indexed: (net: Net) => IndexedMarking;
 	/** The number of entries in the log. The next entry gets this index. */
 	readonly logLength: number;
 	/** The ingress that the log holds under the request id, or undefined when the log has no such ingress. */
@@ -19,7 +20,7 @@ export type NetInstanceView = {
 /** The view of a full state, for a caller that already holds the whole log. */
 export function viewOf(state: NetInstanceState): NetInstanceView {
 	return {
-		marking: state.marking,
+		indexed: (net) => indexMarking(net, state.marking),
 		logLength: state.log.length,
 		ingressOf: (requestId) =>
 			state.log.find((entry): entry is Ingress => entry.kind === "ingress" && entry.requestId === requestId),

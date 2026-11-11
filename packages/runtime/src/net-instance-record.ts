@@ -1,9 +1,12 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { ConversationDocToken } from "@earendil-works/pi-durable";
 import { defineDoc } from "@earendil-works/pi-durable";
-import type { Marking, Token } from "@petrus/petri-net";
-import { placeId, transitionId } from "@petrus/petri-net";
+import type { Marking, MarkingJournalOp, Token } from "@petrus/petri-net";
+import { indexMarking, markingProblems, placeId, transitionId } from "@petrus/petri-net";
+import type { IngressBuckets } from "./ingress-index.ts";
+import { buildIngressIndex, ingressIndexOf, insertIngress } from "./ingress-index.ts";
 import type { Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
+import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 
 type StoredMarking = Record<string, JsonValue[]>;
@@ -16,15 +19,14 @@ type StoredEntry =
 
 /**
  * A net instance as Durable stores it. `net` names the net that owns the instance; it is empty until the first
- * commit. `ingresses` gives the log index of each ingress under the key `request:<request id>`, so a commit finds a
- * recorded request id by reading only that entry. The prefix keeps a request id such as `__proto__` from naming a
- * property that every object has.
+ * commit. `ingresses` stores sorted request id and log index pairs in 1024 array buckets.
  */
 export type NetInstanceRecord = {
 	net: string;
+	stamp: string;
 	marking: StoredMarking;
 	log: StoredEntry[];
-	ingresses: Record<string, number>;
+	ingresses: IngressBuckets;
 };
 
 /**
@@ -37,7 +39,7 @@ export const netInstanceRecord: ConversationDocToken<NetInstanceRecord> = define
 	scope: "conversation",
 	history: "latest",
 	fork: "initial",
-	initial: () => ({ net: "", marking: {}, log: [], ingresses: {} }),
+	initial: () => ({ net: "", stamp: "", marking: {}, log: [], ingresses: buildIngressIndex([]) }),
 	checkpointWhen: () => false,
 });
 
@@ -55,7 +57,14 @@ export function readNetInstance(stored: Readonly<NetInstanceRecord>): NetInstanc
  */
 export function readNetInstanceView(stored: Readonly<NetInstanceRecord>): NetInstanceView {
 	return {
-		marking: markingOf(stored.marking),
+		indexed: (net) => {
+			const marking = markingOf(stored.marking);
+			const problems = markingProblems(net, marking);
+			if (problems.length > 0) {
+				throw new BrokenNetInstance(`invalid stored marking: ${problems.join("; ")}`);
+			}
+			return indexMarking(net, marking);
+		},
 		logLength: stored.log.length,
 		ingressOf: (requestId) => recordedIngress(stored, requestId),
 		entryAt: (index) => {
@@ -67,31 +76,55 @@ export function readNetInstanceView(stored: Readonly<NetInstanceRecord>): NetIns
 
 /** The ingress under `requestId`, from the index: only when the entry there is an ingress of that request id. */
 function recordedIngress(stored: Readonly<NetInstanceRecord>, requestId: string): Ingress | undefined {
-	const index = stored.ingresses[indexKey(requestId)];
+	const index = ingressIndexOf(stored.ingresses, requestId);
 	const entry = index === undefined ? undefined : stored.log[index];
 	return entry?.kind === "ingress" && entry.requestId === requestId ? ingressOf(entry) : undefined;
 }
 
-function indexKey(requestId: string): string {
-	return `request:${requestId}`;
-}
-
-/** Writes a commit into the draft: the marking, the new log entries `appended`, and the log index of each new ingress. */
+/** Replays changes on a Durable draft, then appends the log and indexes each new ingress. */
 export function writeNetInstance(
 	draft: NetInstanceRecord,
 	net: string,
-	marking: Marking,
+	journal: readonly MarkingJournalOp[],
 	appended: readonly LogEntry[],
 ): void {
 	const first = draft.log.length;
 	draft.net = net;
-	draft.marking = storedMarking(marking);
+	for (const op of journal) {
+		replayMarking(draft.marking, op);
+	}
 	draft.log.push(...appended.map(storedEntry));
 	appended.forEach((entry, index) => {
 		if (entry.kind === "ingress") {
-			draft.ingresses[indexKey(entry.requestId)] = first + index;
+			insertIngress(draft.ingresses, entry.requestId, first + index);
 		}
 	});
+}
+
+function replayMarking(marking: StoredMarking, op: MarkingJournalOp): void {
+	switch (op.kind) {
+		case "drop":
+			Reflect.deleteProperty(marking, op.place);
+			break;
+		case "remove":
+			marking[op.place]?.splice(op.index, 1);
+			break;
+		case "append":
+			appendStored(marking, op.place, op.tokens);
+			break;
+		// Stryker disable next-line ConditionalExpression: The journal union is exhaustive; this branch only checks its type.
+		default:
+			op satisfies never;
+	}
+}
+
+function appendStored(marking: StoredMarking, place: string, tokens: readonly Token[]): void {
+	const stored = tokens.map(json);
+	if (Object.hasOwn(marking, place)) {
+		marking[place]?.push(...stored);
+	} else {
+		marking[place] = stored;
+	}
 }
 
 /** A copy of a token as Durable's JSON, whose lists are not read-only. */

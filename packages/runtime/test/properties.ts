@@ -1,4 +1,5 @@
 import type { Harness } from "@earendil-works/pi-durable";
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, SelectionPolicy, Transition } from "@petrus/petri-net";
 import { definitionOrder, fireStep, placeId, transitionId } from "@petrus/petri-net";
@@ -75,7 +76,7 @@ export function faultArbitrary(maxCommit: number): fc.Arbitrary<Fault> {
 }
 
 export function contestedOptions(policy: SelectionPolicy, clock: TestClock): RuntimeOptions {
-	return { name: "contested", net: contested, policy, clock, retryDelayMs: 10 };
+	return { name: "contested", nonce: randomUUID(), net: contested, policy, clock, retryDelayMs: 10 };
 }
 
 function batch(requestId: string, tokens: readonly string[]): Batch {

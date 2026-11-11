@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { InputArc, Marking, Token, Transition } from "@petrus/petri-net";
 import { definitionOrder, enabledBindings, tokenKey, tokensAt, transitionId } from "@petrus/petri-net";
@@ -65,6 +66,7 @@ function sharedTable(size: number, pause: (philosopher: Token) => Promise<void>)
 function runtimeOf(size: number, table: Table): Runtime {
 	return createRuntime({
 		name: "dining-philosophers",
+		nonce: randomUUID(),
 		net: diningPhilosophers,
 		policy: definitionOrder,
 		clock,

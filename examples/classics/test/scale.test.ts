@@ -1,7 +1,9 @@
+import { tokenKey } from "@petrus/petri-net";
 import fc from "fast-check";
 import { expect, test } from "vitest";
 import type { ScaleNet, ScaleRun } from "./scale.ts";
 import { runAtScale } from "./scale.ts";
+import { countTokenKeys } from "./token-key-counter.ts";
 
 /**
  * Budgets on counts, never on time, of the runs that `pnpm scale` times. The number of storage commits and the size
@@ -17,9 +19,19 @@ const runs = new Map<string, Promise<ScaleRun>>();
 /** The run of `net` at `runSize`, once for all the tests in this file. */
 function runOnce(net: ScaleNet, runSize: number): Promise<ScaleRun> {
 	const key = `${net} ${String(runSize)}`;
-	const run = runs.get(key) ?? runAtScale(net, runSize);
+	const run = runs.get(key) ?? measured(net, runSize);
 	runs.set(key, run);
 	return run;
+}
+
+async function measured(net: ScaleNet, runSize: number): Promise<ScaleRun> {
+	const counter = countTokenKeys();
+	try {
+		// state() validates every busy token and calls guards, so hash capture must not enter the work budget.
+		return await runAtScale(net, runSize, { takeTokenKeys: counter.take, recordStates: false });
+	} finally {
+		counter.close();
+	}
 }
 
 /** A count of the run of `net` at `size` and at twice that size. */
@@ -68,4 +80,43 @@ test("the log-length formulas hold for generated sizes from 2 to 30", async () =
 		}),
 		{ numRuns: 8, examples: [[2], [3], [4]] },
 	);
+});
+
+test("the per-commit counters observe guards and token keys for both nets", async () => {
+	for (const net of nets) {
+		for (const n of [size, 2 * size]) {
+			const run = await runOnce(net, n);
+			expect(run.work).toHaveLength(net === "philosophers" ? n + 1 : 2 * n + Math.ceil(n / 3) + 1);
+			expect(run.stateHashes).toStrictEqual([]);
+			expect(run.work.slice(1).some((work) => work.guards > 0)).toBe(true);
+			expect(run.work.slice(1).every((work) => work.tokenKeys > 0)).toBe(true);
+		}
+	}
+});
+
+test("the token-key counter counts calls once and resets after each measurement", () => {
+	const counter = countTokenKeys();
+	try {
+		counter.take();
+		tokenKey("one");
+		tokenKey({ two: 2 });
+		expect(counter.take()).toBe(2);
+		expect(counter.take()).toBe(0);
+	} finally {
+		counter.close();
+	}
+});
+
+function maximumWork(run: ScaleRun, field: "guards" | "tokenKeys"): number {
+	return Math.max(...run.work.slice(1).map((work) => work[field]));
+}
+
+test.each(nets)("guard calls per commit after the first stay constant from N to 2N: %s", async (net) => {
+	const [single, double] = await atSizeAndDouble(net, (run) => maximumWork(run, "guards"));
+	expect(double).toBeLessThanOrEqual(single + 4);
+});
+
+test.each(nets)("token-key calls per commit after the first stay constant from N to 2N: %s", async (net) => {
+	const [single, double] = await atSizeAndDouble(net, (run) => maximumWork(run, "tokenKeys"));
+	expect(double).toBeLessThanOrEqual(single + 16);
 });

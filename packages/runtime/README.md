@@ -8,13 +8,16 @@ The host installs `@earendil-works/pi-durable` and `@earendil-works/chord` at 1.
 package, so the host and the runtime share one copy of Durable: its Harness, its registry and its error classes.
 
 ```ts
+import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { definitionOrder } from "@petrus/petri-net";
 import { createRuntime } from "@petrus/runtime";
 
 const clock = { now: () => Date.now() };
-const runtime = createRuntime({ name: "comment-replies", net, policy: definitionOrder, clock, retryDelayMs: 1_000 });
+const runtime = createRuntime({
+  name: "comment-replies", nonce: randomUUID(), net, policy: definitionOrder, clock, retryDelayMs: 1_000,
+});
 const registry = createRegistry();
 registry.install(runtime.extension);
 const harness = await Harness.open(storage, { models, registry, now: clock.now }, BACKGROUND_CONTEXT);

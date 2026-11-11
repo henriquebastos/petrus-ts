@@ -1,4 +1,4 @@
-import { placeId } from "@petrus/petri-net";
+import { markingOfIndexed, placeId } from "@petrus/petri-net";
 import { describe, expect, test } from "vitest";
 import type { NetInstanceState } from "../src/index.ts";
 import { admit } from "../src/admit.ts";
@@ -10,7 +10,14 @@ const ingress = { kind: "ingress", ...batch, at: 4 } as const;
 
 describe("admit", () => {
 	test("applies a new batch: adds its tokens after those already there and returns its ingress", () => {
-		expect(admit(contested, viewOf(initialState), batch, 4)).toStrictEqual({
+		const admitted = admit(contested, viewOf(initialState), batch, 4);
+		expect(
+			admitted.kind === "applied" && {
+				kind: admitted.kind,
+				ingress: admitted.ingress,
+				marking: markingOfIndexed(admitted.indexed),
+			},
+		).toStrictEqual({
 			kind: "applied",
 			ingress,
 			marking: { [ready.id]: ["j1", "j2", "j1"], [left.id]: ["j2"] },

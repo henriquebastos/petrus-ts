@@ -18,6 +18,7 @@ const scriptNames = [
 	"periodic",
 	"prepare",
 	"scale",
+	"scale:state",
 	"test",
 	"test:gates",
 	"typecheck",

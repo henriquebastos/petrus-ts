@@ -31,7 +31,10 @@ export function afterEnqueue(plant: ((draft: NetInstanceRecord) => void) | undef
 		await runtime.instance(harness, conversationId).enqueue(firstBatch(["j1"]), context);
 		if (plant !== undefined) {
 			await harness.commit(async (tx) => {
-				plant(await tx.doc(netInstanceRecord, conversationId));
+				const draft = await tx.doc(netInstanceRecord, conversationId);
+				plant(draft);
+				// A writer outside the runtime invalidates its cached marking.
+				draft.stamp = "";
 			}, context);
 		}
 	};

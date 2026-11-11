@@ -20,6 +20,7 @@
 		"periodic": "stryker run",
 		"prepare": "husky",
 		"scale": "node scripts/scale.ts",
+		"scale:state": "node scripts/check-scale-state.ts",
 		"test": "vitest run --coverage",
 		"test:gates": "vitest run --config vitest.gates.config.ts",
 		"typecheck": "tsc -p packages/petri-net/tsconfig.json && tsc -p packages/runtime/tsconfig.json && tsc -p examples/comment-replies/tsconfig.json && tsc -p examples/classics/tsconfig.json && tsc -p tsconfig.json"

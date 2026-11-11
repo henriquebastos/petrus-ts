@@ -3,6 +3,8 @@
 import type { Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
 import { createRuntime } from "../../packages/runtime/src/index.ts";
 import { admit } from "../../packages/runtime/src/admit.ts";
+import { indexMarking } from "../../packages/petri-net/src/index.ts";
+import { createNetInstanceCache } from "../../packages/runtime/src/net-instance-cache.ts";
 import { advanceUntilQuiet } from "../../packages/runtime/src/advance.ts";
 import { netInstanceRecord, writeNetInstance } from "../../packages/runtime/src/net-instance-record.ts";
 import type { NetInstanceParts } from "../../packages/runtime/src/net-instance-commit.ts";
@@ -13,6 +15,7 @@ export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {
 	const runtime = createRuntime(options);
 	const parts: NetInstanceParts = {
 		name: options.name,
+		cache: createNetInstanceCache(`${options.nonce}:fixture`),
 		net: options.net,
 		policy: options.policy,
 		handlerIds: new Set(),
@@ -29,15 +32,15 @@ export function createSplitCommitRuntime(options: RuntimeOptions): Runtime {
 					const view = viewOf(checkedState(parts, draft));
 					const admitted = admit(options.net, view, batch, at);
 					if (admitted.kind === "applied") {
-						writeNetInstance(draft, options.name, admitted.marking, [admitted.ingress]);
+						writeNetInstance(draft, options.name, admitted.indexed.journal, [admitted.ingress]);
 					}
 					return admitted.ingress;
 				}, context);
 				const fired = await host.commit(async (tx) => {
 					const draft = await tx.doc(netInstanceRecord, conversationId);
 					const state = checkedState(parts, draft);
-					const stepped = advanceUntilQuiet(options.net, options.policy, state.marking, at);
-					writeNetInstance(draft, options.name, stepped.marking, stepped.fired);
+					const stepped = advanceUntilQuiet(options.policy, indexMarking(options.net, state.marking), at);
+					writeNetInstance(draft, options.name, stepped.indexed.journal, stepped.fired);
 					return stepped.fired;
 				}, context);
 				return { ingress, fired };

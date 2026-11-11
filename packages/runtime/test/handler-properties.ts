@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, placeId, tokenKey, transitionId } from "@petrus/petri-net";
@@ -80,6 +81,7 @@ const hostRequestIds = new Set([firstBatch([]).requestId, lateBatch.requestId]);
 export function jobsOptions(service: Service, clock: TestClock): RuntimeOptions {
 	return {
 		name: "jobs",
+		nonce: randomUUID(),
 		net: jobsNet,
 		policy: definitionOrder,
 		clock,

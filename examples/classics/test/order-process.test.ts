@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { Marking, Token } from "@petrus/petri-net";
 import { definitionOrder, tokensAt } from "@petrus/petri-net";
@@ -63,6 +64,7 @@ function fakeShop(missing: readonly string[], declined: readonly string[], pause
 function runtimeOf(shop: Shop): Runtime {
 	return createRuntime({
 		name: "order-process",
+		nonce: randomUUID(),
 		net: orderProcess,
 		policy: definitionOrder,
 		clock,

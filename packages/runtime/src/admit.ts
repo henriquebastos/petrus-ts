@@ -1,14 +1,14 @@
-import type { Marking, Net } from "@petrus/petri-net";
-import { addTokens, markingProblems, placeId, tokenKey } from "@petrus/petri-net";
+import type { IndexedMarking, Marking, Net } from "@petrus/petri-net";
+import { addTokensIndexed, markingProblems, placeId, tokenKey } from "@petrus/petri-net";
 import type { Batch, Ingress } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 
 /**
- * `applied`: the batch is new; `ingress` is its new log entry, and `marking` holds its tokens. `repeated`: the log
+ * `applied`: the batch is new; `ingress` is its new log entry, and `indexed` holds its tokens. `repeated`: the log
  * already has the request id, so nothing changes and `ingress` is the recorded one.
  */
 export type Admitted =
-	| { readonly kind: "applied"; readonly ingress: Ingress; readonly marking: Marking }
+	| { readonly kind: "applied"; readonly ingress: Ingress; readonly indexed: IndexedMarking }
 	| { readonly kind: "repeated"; readonly ingress: Ingress };
 
 /**
@@ -21,7 +21,7 @@ export function admit(net: Net, view: NetInstanceView, batch: Batch, at: number)
 	const recorded = view.ingressOf(batch.requestId);
 	if (recorded === undefined) {
 		const ingress: Ingress = { kind: "ingress", requestId: batch.requestId, tokens: batch.tokens, at };
-		return { kind: "applied", ingress, marking: added(view.marking, batch.tokens) };
+		return { kind: "applied", ingress, indexed: added(view.indexed(net), batch.tokens) };
 	}
 	if (tokenKey(recorded.tokens) !== tokenKey(batch.tokens)) {
 		throw new Error(`request ${batch.requestId} already added other tokens`);
@@ -37,6 +37,6 @@ export function checkBatch(net: Net, batch: Batch): void {
 	}
 }
 
-function added(marking: Marking, tokens: Marking): Marking {
-	return Object.entries(tokens).reduce((sum, [place, more]) => addTokens(sum, placeId(place), more), marking);
+function added(indexed: IndexedMarking, tokens: Marking): IndexedMarking {
+	return Object.entries(tokens).reduce((sum, [place, more]) => addTokensIndexed(sum, placeId(place), more), indexed);
 }

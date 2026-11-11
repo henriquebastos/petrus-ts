@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, placeId, tokenKey } from "@petrus/petri-net";
@@ -52,7 +53,15 @@ export function jobsBatch(jobs: readonly string[], slotCount: number): Batch {
 }
 
 export function workOptions(handler: Handler, clock: TestClock): RuntimeOptions {
-	return { name: "work", net: workNet, policy: definitionOrder, clock, handlers: [handler], retryDelayMs: 1 };
+	return {
+		name: "work",
+		nonce: randomUUID(),
+		net: workNet,
+		policy: definitionOrder,
+		clock,
+		handlers: [handler],
+		retryDelayMs: 1,
+	};
 }
 
 /** A promise that rejects once the signal aborts, with the signal's reason as the cause. */

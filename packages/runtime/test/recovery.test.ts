@@ -57,6 +57,7 @@ test("repairs a faulted operation and resolves its result once without restartin
 	await harness.commit(async (tx) => {
 		const draft = await tx.doc(netInstanceRecord, root.id);
 		draft.net = "broken";
+		draft.stamp = "";
 	}, context);
 	await settle();
 	expect((await harness.getTask(task.record.id, context))?.state).toMatchObject({
@@ -67,6 +68,7 @@ test("repairs a faulted operation and resolves its result once without restartin
 	await harness.commit(async (tx) => {
 		const draft = await tx.doc(netInstanceRecord, root.id);
 		draft.net = "jobs";
+		draft.stamp = "";
 	}, context);
 	expect(await instance.inFlight(context)).toHaveLength(1);
 	clock.moveTo(9);

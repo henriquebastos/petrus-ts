@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai";
@@ -17,7 +18,14 @@ export type Opened = { readonly instance: NetInstance; readonly close: () => Pro
 /** A new Harness over `storage` with the runtime of the net, as `src/main.ts` opens it, at a clock that stands still. */
 export async function openInstance(storage: Storage): Promise<Opened> {
 	const clock = { now: () => 1 };
-	const runtime = createRuntime({ name: "comment-replies", net, policy: definitionOrder, clock, retryDelayMs: 1_000 });
+	const runtime = createRuntime({
+		name: "comment-replies",
+		nonce: randomUUID(),
+		net,
+		policy: definitionOrder,
+		clock,
+		retryDelayMs: 1_000,
+	});
 	const registry = createRegistry();
 	registry.install(runtime.extension);
 	const harness = await Harness.open(storage, { models: createModels(), registry, now: clock.now }, context);

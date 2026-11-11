@@ -62,7 +62,8 @@ and never ends.
 
 ## 3 Recovery
 
-Repair the net or the store before calling `resolve`. Keep the operation's start in the
+Repair the net or the store before calling `resolve`. An external edit to the stored instance must clear its
+`stamp` in the same transaction, so the runtime rebuilds its cached marking. Keep the operation's start in the
 log and its task record. Supply a result whose variant and value fit the repaired net. The result's arcs release
 the resources held by the operation. Resolution does not call the handler or undo work in an outside service.
 

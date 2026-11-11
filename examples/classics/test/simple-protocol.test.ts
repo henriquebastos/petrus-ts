@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { Marking, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, tokensAt } from "@petrus/petri-net";
@@ -41,6 +42,7 @@ const waitMs = 10;
 function runtimeOf(network: Network): Runtime {
 	return createRuntime({
 		name: "simple-protocol",
+		nonce: randomUUID(),
 		net: simpleProtocol,
 		policy: definitionOrder,
 		clock,
