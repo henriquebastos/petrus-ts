@@ -4,7 +4,7 @@ The core rule:
 
 > A broken net instance is a bug that the runtime finds in a stored net instance or in its net. A commit with the
 > same input throws it again, so the runtime does not retry it: an enqueue rejects, and a handler task ends as
-> faulted. Its operation stays in flight.
+> faulted. Its operation stays in flight until an operator supplies a valid result after repairing the cause.
 
 ## 1 Terms
 
@@ -37,15 +37,39 @@ Paths are relative to this package.
   Test: `test/delays.test.ts` "a broken net instance in the commit of a due result ends the task faulted, reported
   once, with no new run of the handler".
 - An abort's commit ends its task as faulted on any throw. See section 3 of [aborts.md](aborts.md).
+- `NetInstance.resolve(operationId, result, context)` records an operator's supplied `HandlerResult` after the
+  operation's task has ended. It returns `{ ingress, fired }`, like `enqueue`. The commit checks the task's state
+  through Durable's transaction before it admits the result. It steps the net and starts any new operations in
+  that same commit. Pending, running, waiting, and sleeping tasks cannot be resolved. Test:
+  `test/recovery.test.ts` "refuses pending, running and sleeping tasks before recording a supplied result".
+- A valid result counts once, under `result:<operation id>`. Concurrent or repeated calls return the first ingress
+  and no new firings. The task keeps its original terminal outcome. Tests: `test/recovery.test.ts`
+  "repairs a faulted operation and resolves its result once without restarting its task",
+  "refuses invalid results and unknown operations without changing a terminal operation".
+- A failed resolution transaction changes neither the marking nor the task. A retry releases the tokens once,
+  including after an abort with no result. Test: `test/recovery.test.ts`
+  "a failed resolution commits nothing and a retry releases an aborted operation's tokens once".
+- Resolution rejects an unknown operation or an invalid result without changing the instance. It validates the
+  result even when the log already holds a result. Test: `test/recovery.test.ts`
+  "refuses invalid results and unknown operations without changing a terminal operation".
+- A step-limit fault stays terminal in both `run` and `due`. Resolution can supply a corrected result without
+  running the handler again. A resolution that exceeds the step limit rejects without committing. Test:
+  `test/recovery.test.ts` "a step-limit fault accepts a corrected result without retrying the handler (delayed=%s)".
 
 The simulation gate runs the other-net case of the handler tests on a planted runtime whose task retries every
 throw (`fixtures/simulation/retry-every-throw-runtime.ts`). Its task reports the same bug after each retry delay
 and never ends.
 
-## 3 Limits
+## 3 Recovery
 
-- Nothing ends the operation of a faulted task. It stays in flight for ever, with its input tokens taken.
-- A fixed net or store does not resume a faulted task: `Harness.retryTask` does nothing for a task that has ended,
-  and `abort` returns `terminal`.
-- In the `run` phase, a net that does not become quiet for one handler result ends the task as faulted, also when
-  a new run of the handler could return another result.
+Repair the net or the store before calling `resolve`. Keep the operation's start in the
+log and its task record. Supply a result whose variant and value fit the repaired net. The result's arcs release
+the resources held by the operation. Resolution does not call the handler or undo work in an outside service.
+
+## 4 Limits
+
+- A repaired net or store does not restart a faulted task. `Harness.retryTask` applies to parked tasks, not ended
+  tasks. `abort` returns `terminal` for an ended task. Recovery requires an explicit `resolve` call.
+- A step-limit fault in `run` remains terminal even if another handler run could return a different result.
+  This prevents deterministic results from retrying forever. An operator must choose the corrected result.
+- Resolution requires the operation's task record. It does not recreate a lost task or repair a lost log entry.

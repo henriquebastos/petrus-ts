@@ -87,6 +87,7 @@ export type NetInstance = {
     readonly state: (context: Context) => Promise<NetInstanceState>;
     readonly inFlight: (context: Context) => Promise<readonly Operation[]>;
     readonly abort: (operationId: string, context: Context) => Promise<"marked" | "terminal">;
+    readonly resolve: (operationId: string, result: HandlerResult, context: Context) => Promise<Committed>;
 };
 
 // @public

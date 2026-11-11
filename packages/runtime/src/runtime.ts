@@ -6,14 +6,14 @@ import { netProblems } from "@petrus/petri-net";
 import { admit } from "./admit.ts";
 import { netInstanceRecord } from "./net-instance-record.ts";
 import { createOperationRun } from "./operation-run.ts";
-import type { Handler } from "./handlers.ts";
+import type { Handler, HandlerResult } from "./handlers.ts";
 import { handlerProblems, withHandlers } from "./handlers.ts";
 import type { Committed } from "./net-instance-commit.ts";
 import { checkedState, commitToNetInstance } from "./net-instance-commit.ts";
 import type { Batch, NetInstanceState } from "./net-instance.ts";
 import { viewOf } from "./net-instance-view.ts";
 import type { Operation } from "./operations.ts";
-import { hostBatchProblems, operationsInFlight, startedOperation } from "./operations.ts";
+import { admitResult, hostBatchProblems, operationsInFlight, startedOperation } from "./operations.ts";
 import type { Clock } from "./seams.ts";
 
 /** Where net instances live: a Durable Harness, whose commits, committed reads and task aborts a net instance uses. */
@@ -40,6 +40,11 @@ export type NetInstance = {
 	 * no variant `aborted`, is a bug in the host, so it throws.
 	 */
 	readonly abort: (operationId: string, context: Context) => Promise<"marked" | "terminal">;
+	/**
+	 * Records a supplied result after the operation's task has ended. Refuses a task that has not ended.
+	 * Returns the recorded ingress and no firings when a valid result was already recorded. Does not restart the task.
+	 */
+	readonly resolve: (operationId: string, result: HandlerResult, context: Context) => Promise<Committed>;
 };
 
 /** A net that runs on Pi Durable: the extension that the host installs, and the instances it opens. */
@@ -109,6 +114,22 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 			},
 			state,
 			inFlight: async (context) => operationsInFlight(handlerIds, (await state(context)).log),
+			resolve: (operationId, result, context) =>
+				host.commit(async (tx) => {
+					const taskId = await taskOf(tx, conversationId, operationId);
+					const record = await tx.task(taskId);
+					if (record?.state.status !== "terminal") {
+						throw new Error(`the task of operation ${operationId} has not ended`);
+					}
+					const at = clock.now();
+					return commitToNetInstance(
+						tx,
+						conversationId,
+						parts,
+						(view) => admitResult(net, handlerIds, view, operationId, result, at),
+						at,
+					);
+				}, context),
 			abort: async (operationId, context) => {
 				const operation = startedOperation(handlerIds, viewOf(await state(context)), operationId);
 				if (operation === undefined) {

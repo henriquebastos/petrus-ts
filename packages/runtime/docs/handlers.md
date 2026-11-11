@@ -116,7 +116,7 @@ commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a sec
   the next run of the operation can overlap it: two holders are inside at once. See section 5 of
   [examples/classics/README.md](../../../examples/classics/README.md).
 - A handler has no timeout. A wait inside a handler does not survive a crash; a delayed result does.
-- With no variant `aborted`, an aborted operation stays in flight for ever, with its input tokens taken.
+- Without an `aborted` variant, an aborted operation holds its tokens until an operator calls `resolve`.
 - Durable parks a task that a crash cuts off `restartLimit` times in a row (default 5). Its operation stays in
   flight until the host calls `Harness.retryTask`.
 - A throw that comes back each time, such as a result that does not fit, makes the task run again with no limit.
