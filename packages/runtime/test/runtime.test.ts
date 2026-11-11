@@ -7,7 +7,6 @@ import { createRuntime } from "../src/index.ts";
 import { stepLimit } from "../src/advance.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
 import { BrokenNetInstance } from "../src/net-instance.ts";
-import { netInstanceRecordVersion1 } from "./broken-instance.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
 import { context, createClock, createDisk, Crashed } from "./disk.ts";
 import {
@@ -147,34 +146,6 @@ describe("createRuntime, examples", () => {
 		await expect(theirs.state(context)).rejects.toThrow(wrongNet);
 		await expect(theirs.enqueue({ ...batch, requestId: "delivery-2" }, context)).rejects.toThrow(wrongNet);
 		expect(disk.history()).toHaveLength(1);
-	});
-
-	test("opens a net instance that an earlier version stored, and still finds its request ids", async () => {
-		const clock = createClock(1);
-		const runtime = createRuntime(contestedOptions(definitionOrder, clock));
-		const disk = createDisk([runtime.extension], clock);
-		const earlier = await disk.open();
-		const root = await earlier.harness.root(context);
-		const ingress = { kind: "ingress", ...batch, at: 1 };
-		const fired = { kind: "occurrence", transition: takeLeft, binding: { j: "j1" }, at: 1 };
-		await earlier.harness.commit(async (tx) => {
-			const draft = await tx.doc(netInstanceRecordVersion1, root.id);
-			draft.net = "contested";
-			draft.marking = { [left.id]: ["j1"], [ready.id]: ["j2"] };
-			draft.log = [{ ...ingress, tokens: { [ready.id]: ["j1", "j2"] } }, fired];
-		}, context);
-		await earlier.harness.close(context);
-		const { instance } = await instanceIn(disk, runtime);
-		clock.moveTo(2);
-		expect(await instance.enqueue(batch, context)).toStrictEqual({ ingress, fired: [] });
-		const next = await instance.enqueue({ requestId: "delivery-2", tokens: { [ready.id]: ["j2"] } }, context);
-		expect(next.ingress).toStrictEqual({
-			kind: "ingress",
-			requestId: "delivery-2",
-			tokens: { [ready.id]: ["j2"] },
-			at: 2,
-		});
-		expect(await instance.enqueue(batch, context)).toStrictEqual({ ingress, fired: [] });
 	});
 
 	test("on a new process, finds the recorded ingress of a request id that names a property of every object", async () => {

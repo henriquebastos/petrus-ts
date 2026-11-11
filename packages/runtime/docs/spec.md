@@ -20,9 +20,9 @@ The core rule:
   delivery of it, has the same id.
 - A **commit** is one Durable commit. The runtime stores a net instance as one Durable document of kind
   `petrus.net-instance` in its conversation, with the log index of each ingress by request id. The document keeps
-  only its latest value: the log is the history. A fork of the conversation starts with no net instance.
-  Migration adds the index to a version 1 document. Test: `test/net-instance-record.test.ts` "migrates a
-  version 1 record by indexing its ingresses".
+  only its latest value: the log is the history. A fork of the conversation starts with no net instance. The
+  document has one version and no migration. Test: `test/net-instance-record.test.ts` "has one version and no
+  migration".
 - A **step** calls `fireStep` from the petri-net package with the runtime's **selection policy** (Jensen's step;
   see the petri-net spec). A commit steps until the policy selects nothing, so the net is **quiet** after each
   commit. One commit fires at most `stepLimit` (1,000) steps.

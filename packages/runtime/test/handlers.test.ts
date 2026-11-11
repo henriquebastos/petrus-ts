@@ -24,15 +24,7 @@ import {
 import { viewOf } from "../src/net-instance-view.ts";
 import { BrokenNetInstance } from "../src/net-instance.ts";
 import type { BrokenRun } from "./broken-instance.ts";
-import {
-	afterEnqueue,
-	badVersion1,
-	brokenRun,
-	lostPlace,
-	otherNet,
-	restlessJobsNet,
-	shiftedLog,
-} from "./broken-instance.ts";
+import { afterEnqueue, brokenRun, lostPlace, otherNet, restlessJobsNet, shiftedLog } from "./broken-instance.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
 import { context, createClock, createDisk } from "./disk.ts";
 import type { Service } from "./handler-properties.ts";
@@ -467,12 +459,6 @@ describe("createRuntime with handlers, examples", () => {
 	test("a stored marking that does not fit the net ends the task faulted, reported once, and the operation stays in flight", async () => {
 		expect(await brokenRun(createRuntime, jobsNet, afterEnqueue(lostPlace))).toStrictEqual(
 			faultedOnce("invalid stored marking: marking: place lost is not in the net", [operation]),
-		);
-	});
-
-	test("a stored version 1 record that does not migrate ends the task faulted, reported once, with nothing committed", async () => {
-		expect(await brokenRun(createRuntime, jobsNet, badVersion1)).toStrictEqual(
-			faultedOnce("a version 1 net instance record needs a net name, a marking and a log of entries", []),
 		);
 	});
 

@@ -1,10 +1,9 @@
 import type { JsonValue } from "@earendil-works/chord";
-import type { ConversationDocToken, JsonObject } from "@earendil-works/pi-durable";
+import type { ConversationDocToken } from "@earendil-works/pi-durable";
 import { defineDoc } from "@earendil-works/pi-durable";
 import type { Marking, Token } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
 import type { Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
-import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 
 type StoredMarking = Record<string, JsonValue[]>;
@@ -28,64 +27,19 @@ export type NetInstanceRecord = {
 	ingresses: Record<string, number>;
 };
 
-/** Version 1 of the record had no index of the ingresses. */
-type NetInstanceRecordVersion1 = Omit<NetInstanceRecord, "ingresses">;
-
 /**
  * The Durable document of one net instance. It belongs to the instance's conversation and keeps only its latest
  * value: the log is the history. A fork of the conversation starts with no net instance.
  */
 export const netInstanceRecord: ConversationDocToken<NetInstanceRecord> = defineDoc<NetInstanceRecord>({
 	kind: "petrus.net-instance",
-	version: 2,
+	version: 1,
 	scope: "conversation",
 	history: "latest",
 	fork: "initial",
 	initial: () => ({ net: "", marking: {}, log: [], ingresses: {} }),
-	migrate: (value) => withIngressIndex(value),
 	checkpointWhen: () => false,
 });
-
-/**
- * A version 1 record with the index of its ingresses. A value that is not a version 1 record is a bug in the store,
- * so it throws.
- */
-function withIngressIndex(value: JsonObject): NetInstanceRecord {
-	if (!isVersion1(value)) {
-		throw new BrokenNetInstance("a version 1 net instance record needs a net name, a marking and a log of entries");
-	}
-	const ingresses = Object.fromEntries(
-		value.log.flatMap((entry, index): [string, number][] =>
-			entry.kind === "ingress" ? [[indexKey(entry.requestId), index]] : [],
-		),
-	);
-	return { net: value.net, marking: value.marking, log: value.log, ingresses };
-}
-
-function isVersion1(value: JsonObject): value is NetInstanceRecordVersion1 {
-	const { net, marking, log } = value;
-	return typeof net === "string" && isStoredMarking(marking) && Array.isArray(log) && log.every(isStoredEntry);
-}
-
-function isStoredEntry(entry: JsonValue): entry is StoredEntry {
-	return isObject(entry) && typeof entry.at === "number" && (isStoredIngress(entry) || isStoredOccurrence(entry));
-}
-
-function isStoredIngress(entry: JsonObject): boolean {
-	return entry.kind === "ingress" && typeof entry.requestId === "string" && isStoredMarking(entry.tokens);
-}
-
-function isStoredOccurrence(entry: JsonObject): boolean {
-	return entry.kind === "occurrence" && typeof entry.transition === "string" && isObject(entry.binding);
-}
-
-function isStoredMarking(marking: JsonValue | undefined): marking is StoredMarking {
-	return isObject(marking) && Object.values(marking).every((tokens) => Array.isArray(tokens));
-}
-
-function isObject(value: JsonValue | undefined): value is JsonObject {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * The state in a stored instance, as a copy. A commit reads its instance from a draft, whose values cannot be used
