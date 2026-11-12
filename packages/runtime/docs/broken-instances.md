@@ -13,6 +13,9 @@ A worker fault, orphan, or terminal outcome without a result produces no net out
 faults coordination rather than calling the worker again. Tests: `test/coordination.test.ts`
 "native %s results retain inputs without repeating execution",
 "stored malformed native result envelopes fault settlement and retain recoverable inputs".
+Test: `test/coordination.test.ts`
+"a worker fault aborts its live children and retains the binding until explicit resolution"
+checks that both children end aborted and the fault produces no output or automatic retry.
 
 The start budget is not a fault. It pauses new starts and permits existing operations to settle.
 Raise its ceiling explicitly through `raiseStartLimit`; see [spec.md](spec.md).

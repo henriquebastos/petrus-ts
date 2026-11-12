@@ -22,6 +22,9 @@ choosing success. Petrus waits for terminal state before settlement, including d
 Tests: `test/execution.test.ts` "keeps the native task's abort result";
 `test/aborts.test.ts`
 "cancellation while a worker is $mode holds resources until its child terminates and preserves its chosen result".
+Test: `test/coordination.test.ts`
+"cancellation with owned children survives a crash before or after every cancellation commit"
+checks child termination, one cancellation result, and replay after each injected storage failure.
 
 ## 1b Host responsibilities
 

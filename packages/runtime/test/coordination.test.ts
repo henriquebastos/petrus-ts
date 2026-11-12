@@ -10,7 +10,7 @@ import type { ExecutionInput, HandlerResult, HandlerTransition, NetInstanceHost,
 import { createRuntime, execution } from "../src/index.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
 import { context, createClock, createDisk, enqueueAndSettle, inProcess } from "./disk.ts";
-import type { Disk, TestClock } from "./disk.ts";
+import type { Disk, Faults, Process, TestClock } from "./disk.ts";
 import { replay } from "./replay.ts";
 
 const text = { name: "Text", contains: (value: unknown): value is string => typeof value === "string" };
@@ -72,6 +72,142 @@ class RecordedStorage extends MemoryStorage {
 		return super.commit(writes, callContext);
 	}
 }
+
+function family(fault: boolean): { readonly runtime: Runtime; readonly disk: Disk; readonly clock: TestClock } {
+	const clock = createClock();
+	const child = defineTask<number, { readonly phase: "sleep" | "finish" }, null>({
+		name: "family.child",
+		version: 1,
+		initial: () => ({ phase: "sleep" }),
+		phases: {
+			sleep: ({ input: delay }, rt, ctx) => rt.sleepUntil(rt.now() + delay, { phase: "finish" }, ctx),
+			finish: (_task, rt, ctx) =>
+				rt.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), ctx),
+		},
+		abort: (_task, rt, ctx) => rt.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), ctx),
+	});
+	const worker = defineTask<ExecutionInput, { readonly phase: "spawn" | "finish" }, HandlerResult>({
+		name: "family.worker",
+		version: 1,
+		initial: () => ({ phase: "spawn" }),
+		phases: {
+			spawn: (task, rt, ctx) =>
+				rt.commit(async (tx) => {
+					const children: TaskId<null>[] = [];
+					for (const delay of [7, 23])
+						children.push(await tx.createTask(child, delay, { ownership: { kind: "task", taskId: task.id } }));
+					return fault
+						? { status: "sleeping", until: 1, checkpoint: { phase: "finish" } }
+						: { status: "waiting", on: children, policy: "allSettled", checkpoint: { phase: "finish" } };
+				}, ctx),
+			finish: (_task, rt, ctx) => {
+				if (fault) throw new Error("worker failed with live children");
+				return rt.commit(() => ({ status: "terminal", outcome: { status: "completed", result: answer } }), ctx);
+			},
+		},
+		abort: (_task, rt, ctx) =>
+			rt.commit(
+				() => ({
+					status: "terminal",
+					outcome: { status: "aborted", result: { variant: "done", value: "cancelled" } },
+				}),
+				ctx,
+			),
+	});
+	const runtime = createRuntime({
+		name: "family",
+		nonce: randomUUID(),
+		clock,
+		policy: definitionOrder,
+		startLimit: 1,
+		net: { places: [input, output], transitions: [] },
+		executions: [execution(transition, worker)],
+	});
+	const disk = createDisk([{ ...runtime.extension, tasks: [...(runtime.extension.tasks ?? []), child] }], clock);
+	return { runtime, disk, clock };
+}
+
+test("cancellation with owned children survives a crash before or after every cancellation commit", async () => {
+	async function run(faults?: Faults): Promise<number> {
+		const { runtime, disk } = family(false);
+		await inProcess(disk, {}, async ({ harness, runReady }) => {
+			const instance = runtime.instance(harness, (await harness.root(context)).id);
+			await instance.enqueue(batch, context);
+			await runReady();
+			const children = await harness.commit((tx) => tx.scanTasks({ kind: "family.child" }, 10), context);
+			expect(children.items.map((task) => task.state.status)).toStrictEqual(["sleeping", "sleeping"]);
+			await expect(instance.resolve("work/1", answer, context)).rejects.toThrow("coordinator");
+		});
+		let commits = 0;
+		async function cancel({ harness, settle }: Process): Promise<void> {
+			harness.subscribeCommits(() => {
+				commits += 1;
+			});
+			const instance = runtime.instance(harness, (await harness.root(context)).id);
+			await instance.abort("work/1", context);
+			await settle();
+			const { marking, log } = await instance.state(context);
+			expect(marking).toStrictEqual({ output: ["A"] });
+			expect(log.filter((entry) => entry.kind === "ingress" && entry.requestId === "result:work/1")).toStrictEqual([
+				expect.objectContaining({
+					tokens: { "work:result": [{ binding: { job: "A" }, variant: "done", value: "cancelled" }] },
+				}),
+			]);
+			expect(await instance.inFlight(context)).toStrictEqual([]);
+			const records = await harness.commit((tx) => tx.scanTasks({}, 10), context);
+			expect(records.items).toHaveLength(4);
+			for (const task of records.items)
+				expect(task.state).toMatchObject({ status: "terminal", outcome: { status: "aborted" } });
+		}
+		const result = await inProcess(disk, faults ?? {}, cancel);
+		if (faults !== undefined) {
+			expect(result).toBe("crashed");
+			await inProcess(disk, {}, cancel);
+		}
+		for (const state of disk.history()) expect(replay(runtime.net, {}, state.log)).toStrictEqual(state.marking);
+		return commits;
+	}
+	const commits = await run();
+	expect(commits).toBeGreaterThan(0);
+	for (let index = 0; index < commits; index++) {
+		await run({ crashAtCommit: index });
+		await run({ crashAfterCommit: index });
+	}
+});
+
+test("a worker fault aborts its live children and retains the binding until explicit resolution", async () => {
+	const { runtime, disk, clock } = family(true);
+	await inProcess(disk, {}, async ({ harness, runReady, settle }) => {
+		const instance = runtime.instance(harness, (await harness.root(context)).id);
+		await instance.enqueue(batch, context);
+		await runReady();
+		const children = await harness.commit((tx) => tx.scanTasks({ kind: "family.child" }, 10), context);
+		expect(children.items.map((task) => task.state.status)).toStrictEqual(["sleeping", "sleeping"]);
+		await expect(instance.resolve("work/1", answer, context)).rejects.toThrow("coordinator");
+		clock.moveTo(1);
+		await settle();
+		const records = await harness.commit((tx) => tx.scanTasks({}, 10), context);
+		expect(records.items).toHaveLength(4);
+		expect(records.items.every((task) => task.state.status === "terminal")).toBe(true);
+		for (const child of children.items) {
+			expect((await harness.getTask(child.id, context))?.state).toMatchObject({
+				status: "terminal",
+				outcome: { status: "aborted" },
+			});
+		}
+		expect(records.items.find((task) => task.kind === "family.worker")?.state).toMatchObject({
+			status: "terminal",
+			outcome: { status: "faulted", error: { message: "worker failed with live children" } },
+		});
+		expect(disk.reports()).toHaveLength(1);
+		expect(await instance.inFlight(context)).toHaveLength(1);
+		expect((await instance.state(context)).marking).toStrictEqual({ "work:busy": [{ job: "A" }] });
+		await instance.resolve("work/1", answer, context);
+		await instance.resolve("work/1", answer, context);
+		expect((await instance.state(context)).marking).toStrictEqual({ output: ["A"] });
+		expect(await instance.inFlight(context)).toStrictEqual([]);
+	});
+});
 
 test("allocation creates one coordinator, launch creates one owned execution, and resolve refuses live coordination", async () => {
 	const clock = createClock();
