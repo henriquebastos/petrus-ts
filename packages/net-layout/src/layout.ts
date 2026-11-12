@@ -1,6 +1,6 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkExtendedEdge, ElkLabel } from "elkjs/lib/elk.bundled.js";
-import type { NetGraph, NetLayout, Point } from "@petrus/net-view";
+import type { NetGraph, NetLayout, Point } from "@petrus/net-view-model";
 
 function labelCenter(label: ElkLabel): Point {
 	return { x: (label.x ?? 0) + (label.width ?? 0) / 2, y: (label.y ?? 0) + (label.height ?? 0) / 2 };

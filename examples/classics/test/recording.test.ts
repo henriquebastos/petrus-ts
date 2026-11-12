@@ -4,8 +4,8 @@ import { placeId, transitionId } from "@petrus/petri-net";
 import { expect, test } from "vitest";
 import { recordProducerConsumer } from "../src/record-producer-consumer.ts";
 import { recordDiningPhilosophers } from "../src/record-dining-philosophers.ts";
-import { readRecording, projectNet } from "@petrus/net-view";
-import { replay } from "@petrus/runtime-view";
+import { readRecording, projectNet } from "@petrus/net-view-model";
+import { replay } from "@petrus/runtime-replay";
 
 test("records dining philosophers through the same replay contract", async () => {
 	let time = 0;

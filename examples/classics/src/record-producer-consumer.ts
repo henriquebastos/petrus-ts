@@ -1,5 +1,5 @@
 import type { Clock } from "@petrus/runtime";
-import type { Recording } from "@petrus/net-view";
+import type { Recording } from "@petrus/net-view-model";
 import { initialMarking, producerConsumer, producerConsumerHandlers } from "./producer-consumer.ts";
 import { recordRun } from "./record-run.ts";
 

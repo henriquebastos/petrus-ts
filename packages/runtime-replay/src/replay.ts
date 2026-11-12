@@ -1,8 +1,8 @@
 import type { Marking, Net } from "@petrus/petri-net";
 import { addTokens, fire, placeId } from "@petrus/petri-net";
 import type { LogEntry } from "@petrus/runtime";
-import type { ViewFrame } from "@petrus/net-view";
-import { inspectMarking } from "@petrus/net-view";
+import type { ViewFrame } from "@petrus/net-view-model";
+import { inspectMarking } from "@petrus/net-view-model";
 
 /** Replays the runtime log with Petrus. Intermediate frames are not committed snapshots. */
 export function replay(net: Net, log: readonly LogEntry[]): readonly ViewFrame[] {

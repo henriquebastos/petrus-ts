@@ -1,5 +1,5 @@
 import type { Clock } from "@petrus/runtime";
-import type { Recording } from "@petrus/net-view";
+import type { Recording } from "@petrus/net-view-model";
 import { diningPhilosophers, diningPhilosophersHandlers, initialMarking } from "./dining-philosophers.ts";
 import { recordRun } from "./record-run.ts";
 

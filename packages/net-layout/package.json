@@ -7,7 +7,7 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"@petrus/net-view": "workspace:*",
+		"@petrus/net-view-model": "workspace:*",
 		"elkjs": "0.12.0"
 	}
 }

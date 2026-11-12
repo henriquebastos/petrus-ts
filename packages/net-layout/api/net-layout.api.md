@@ -4,8 +4,8 @@
 
 ```ts
 
-import type { NetGraph } from '@petrus/net-view';
-import type { NetLayout } from '@petrus/net-view';
+import type { NetGraph } from '@petrus/net-view-model';
+import type { NetLayout } from '@petrus/net-view-model';
 
 // @public
 export function layoutNet(graph: NetGraph): Promise<NetLayout>;

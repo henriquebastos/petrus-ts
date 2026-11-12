@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeAll, expect, test } from "vitest";
-import type { Recording } from "@petrus/net-view";
+import type { Recording } from "@petrus/net-view-model";
 import { App } from "../viewer/app.tsx";
-import { Viewer } from "@petrus/net-view-react";
+import { Viewer } from "@petrus/net-viewer-react";
 
 beforeAll(() => {
 	// jsdom has no layout. The browser proof checks measured nodes, edges and viewport controls.

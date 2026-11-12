@@ -1,9 +1,9 @@
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
-import type { Recording, NetLayout } from "@petrus/net-view";
-import { readRecording } from "@petrus/net-view";
+import type { Recording, NetLayout } from "@petrus/net-view-model";
+import { readRecording } from "@petrus/net-view-model";
 import { layoutNet } from "@petrus/net-layout";
-import { Viewer } from "@petrus/net-view-react";
+import { Viewer } from "@petrus/net-viewer-react";
 
 type Load =
 	| { readonly kind: "loading" }

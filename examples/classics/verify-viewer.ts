@@ -3,8 +3,8 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { parseJson } from "../../scripts/json.ts";
-import { readRecording } from "@petrus/net-view";
-import type { Recording, ViewFrame, ViewNode } from "@petrus/net-view";
+import { readRecording } from "@petrus/net-view-model";
+import type { Recording, ViewFrame, ViewNode } from "@petrus/net-view-model";
 
 const url = process.argv[2];
 if (url === undefined) throw new Error("Pass the running viewer URL");

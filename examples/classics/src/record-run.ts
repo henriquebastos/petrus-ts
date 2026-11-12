@@ -7,9 +7,9 @@ import type { Marking, Net } from "@petrus/petri-net";
 import type { Clock, Handler } from "@petrus/runtime";
 import { createRuntime, withHandlers } from "@petrus/runtime";
 import { Value } from "typebox/value";
-import type { Recording } from "@petrus/net-view";
-import { projectNet } from "@petrus/net-view";
-import { replay } from "@petrus/runtime-view";
+import type { Recording } from "@petrus/net-view-model";
+import { projectNet } from "@petrus/net-view-model";
+import { replay } from "@petrus/runtime-replay";
 
 /** Runs a classical net on Durable and checks replay against the committed state. */
 export async function recordRun(

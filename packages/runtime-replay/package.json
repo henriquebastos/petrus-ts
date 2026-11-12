@@ -1,5 +1,5 @@
 {
-	"name": "@petrus/runtime-view",
+	"name": "@petrus/runtime-replay",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -9,6 +9,6 @@
 	"dependencies": {
 		"@petrus/petri-net": "workspace:*",
 		"@petrus/runtime": "workspace:*",
-		"@petrus/net-view": "workspace:*"
+		"@petrus/net-view-model": "workspace:*"
 	}
 }

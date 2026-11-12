@@ -25,10 +25,10 @@ Known limits are in the "Limits" sections of the package docs. The open work and
 | ------------------- | ------------------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------- |
 | `@petrus/petri-net` | A coloured Petri net: places, bindings, firing. Pure. | nothing | [README](packages/petri-net/README.md), [spec](packages/petri-net/docs/spec.md) |
 | `@petrus/runtime` | Net instances on Pi Durable: enqueues, steps, handlers. | `petri-net`, Pi Durable, Chord | [README](packages/runtime/README.md), [spec](packages/runtime/docs/spec.md) |
-| `@petrus/net-view` | Display data, net projection, marking inspection. | `petri-net`, TypeBox | [README](packages/net-view/README.md) |
-| `@petrus/net-layout` | Automatic node placement and arc routes. | `net-view` types, ELK | [README](packages/net-layout/README.md) |
-| `@petrus/runtime-view` | Runtime log replay through Petrus firing. | `petri-net`, `net-view`, `runtime` types | [README](packages/runtime-view/README.md) |
-| `@petrus/net-view-react` | Canvas, inspector, replay controls. | `net-view`, React, React Flow | [README](packages/net-view-react/README.md) |
+| `@petrus/net-view-model` | Display data, net projection, marking inspection. | `petri-net`, TypeBox | [README](packages/net-view-model/README.md) |
+| `@petrus/net-layout` | Automatic node placement and arc routes. | `net-view-model` types, ELK | [README](packages/net-layout/README.md) |
+| `@petrus/runtime-replay` | Runtime log replay through Petrus firing. | `petri-net`, `net-view-model`, `runtime` types | [README](packages/runtime-replay/README.md) |
+| `@petrus/net-viewer-react` | Canvas, inspector, replay controls. | `net-view-model`, React, React Flow | [README](packages/net-viewer-react/README.md) |
 
 `examples/comment-replies` is a host app on these packages: GitHub webhook deliveries in, request ids, Durable's
 JSONL storage. See its [README](examples/comment-replies/README.md). `examples/classics` runs nets from the

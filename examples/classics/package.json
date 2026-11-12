@@ -10,10 +10,10 @@
 		"verify:viewer": "node verify-viewer.ts"
 	},
 	"dependencies": {
-		"@petrus/net-view": "workspace:*",
+		"@petrus/net-view-model": "workspace:*",
 		"@petrus/net-layout": "workspace:*",
-		"@petrus/net-view-react": "workspace:*",
-		"@petrus/runtime-view": "workspace:*",
+		"@petrus/net-viewer-react": "workspace:*",
+		"@petrus/runtime-replay": "workspace:*",
 		"@petrus/petri-net": "workspace:*",
 		"@petrus/runtime": "workspace:*",
 		"@xyflow/react": "12.12.1",

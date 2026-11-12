@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { useState } from "react";
-import type { Recording, NetLayout } from "@petrus/net-view";
+import type { Recording, NetLayout } from "@petrus/net-view-model";
 import { NetCanvas } from "./graph.tsx";
 import { Inspector } from "./inspector.tsx";
 

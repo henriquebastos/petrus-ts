@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import fc from "fast-check";
-import type { NetGraph } from "@petrus/net-view";
+import type { NetGraph } from "@petrus/net-view-model";
 import { layoutNet } from "../src/index.ts";
 
 test("lays out arbitrary names, cycles, parallel arcs, and isolated nodes without changing topology", async () => {

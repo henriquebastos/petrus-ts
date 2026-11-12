@@ -1,11 +1,11 @@
 [
 	{
 		"rule": "display-does-not-run-or-layout",
-		"from": "packages/net-view-react/src/runtime.tsx"
+		"from": "packages/net-viewer-react/src/runtime.tsx"
 	},
 	{
 		"rule": "view-data-does-not-run",
-		"from": "packages/net-view/src/runtime.ts"
+		"from": "packages/net-view-model/src/runtime.ts"
 	},
 	{
 		"rule": "petri-net-imports-only-lower-layers",

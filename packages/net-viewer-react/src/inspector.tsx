@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
-import type { ViewFrame, Recording } from "@petrus/net-view";
-import { viewTokens } from "@petrus/net-view";
+import type { ViewFrame, Recording } from "@petrus/net-view-model";
+import { viewTokens } from "@petrus/net-view-model";
 
 /** Shows complete token values, including duplicate values, at the replay cursor. */
 export function Inspector({

@@ -6,10 +6,10 @@
 const layers = [
 	"petri-net",
 	"runtime",
-	"net-view",
+	"net-view-model",
 	"net-layout",
-	"runtime-view",
-	"net-view-react",
+	"runtime-replay",
+	"net-viewer-react",
 	"hamsterdan",
 	"hamsterdan-github",
 	"hamsterdan-cli",
@@ -37,13 +37,13 @@ module.exports = {
 			name: "display-does-not-run-or-layout",
 			severity: "error",
 			comment: "The React display consumes data. Runtime replay and layout remain host choices.",
-			from: { path: "^packages/net-view-react/" },
-			to: { path: "^packages/(runtime|runtime-view|net-layout)/" },
+			from: { path: "^packages/net-viewer-react/" },
+			to: { path: "^packages/(runtime|runtime-replay|net-layout)/" },
 		},
 		{
 			name: "view-data-does-not-run",
 			severity: "error",
-			from: { path: "^packages/(net-view|net-layout)/" },
+			from: { path: "^packages/(net-view-model|net-layout)/" },
 			to: { path: "^packages/runtime/" },
 		},
 		{
@@ -60,7 +60,7 @@ module.exports = {
 			from: { path: "^examples/" },
 			to: {
 				path: "^packages/",
-				pathNot: ["^packages/[^/]+/src/index\\.ts$", "^packages/net-view-react/src/style\\.css$"],
+				pathNot: ["^packages/[^/]+/src/index\\.ts$", "^packages/net-viewer-react/src/style\\.css$"],
 			},
 		},
 		{

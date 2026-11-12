@@ -1,8 +1,8 @@
 import type { ReactElement } from "react";
 import type { Edge, Node, NodeProps } from "@xyflow/react";
 import { Background, Controls, Handle, MarkerType, Position, ReactFlow, useNodesState } from "@xyflow/react";
-import type { NetGraph, NetLayout, ViewFrame } from "@petrus/net-view";
-import { viewTokens } from "@petrus/net-view";
+import type { NetGraph, NetLayout, ViewFrame } from "@petrus/net-view-model";
+import { viewTokens } from "@petrus/net-view-model";
 import { ReplayEdge } from "./replay-edge.tsx";
 
 type DisplayNode = Node<{ name: string; kind: string; count: number; enabled: boolean; active: boolean }, "petri">;

@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import type { Edge, EdgeProps } from "@xyflow/react";
 import { BaseEdge, getBezierPath } from "@xyflow/react";
-import type { Point } from "@petrus/net-view";
+import type { Point } from "@petrus/net-view-model";
 
 type ArcData = {
 	readonly pulse: number;

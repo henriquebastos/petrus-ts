@@ -16,7 +16,7 @@ A local workshop returns `item n` for `order n`. No external service or language
 The build writes the recording, then bundles the browser app. Rebuild to record changed net code.
 
 `../src/record-run.ts` expands the handlers with `withHandlers`, runs their Durable tasks, and reads
-the committed state. `../../../packages/runtime-view/src/replay.ts` applies each ingress and calls Petrus `fire` for each occurrence.
+the committed state. `../../../packages/runtime-replay/src/replay.ts` applies each ingress and calls Petrus `fire` for each occurrence.
 The recorder rejects a replay whose final marking differs from the committed marking.
 The recording includes a SHA-256 digest of the local package sources and classical-net sources.
 
@@ -29,7 +29,7 @@ The result places receive handler results. Select a node on the canvas or throug
 Place inspection shows every token value, including duplicates. Transition inspection shows enabled bindings
 computed by Petrus TS. Enabled binding elements can compete for the same tokens.
 
-`../../../packages/net-view/src/model.ts` defines the display contract. TypeBox validates downloaded recordings before the app displays them.
+`../../../packages/net-view-model/src/model.ts` defines the display contract. TypeBox validates downloaded recordings before the app displays them.
 Node IDs distinguish places from transitions. Arc IDs preserve parallel arcs.
 Guards and arc expressions remain functions in the net. The viewer does not parse or execute their descriptions.
 
