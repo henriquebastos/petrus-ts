@@ -1,8 +1,8 @@
-import { readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { Type } from "typebox";
-import { readJson, repoRoot } from "./tools.ts";
+import { readJson, repoRoot, sandbox } from "./tools.ts";
 
 const manifest = Type.Object({
 	name: Type.String(),
@@ -34,20 +34,26 @@ function peersNotTested(
 }
 
 /**
- * The root manifest and that of each package folder. A file beside the folders, such as Finder's `.DS_Store`, is no
- * package.
+ * The root manifest and that of each package folder under `root`. A file beside the folders, such as Finder's
+ * `.DS_Store`, is no package. Nor is a folder without a manifest, such as the `node_modules` that a removed package
+ * leaves in an updated checkout; pnpm skips it too.
  */
-const manifestPaths = [
-	"package.json",
-	...["packages", "examples"].flatMap((folder) =>
-		readdirSync(join(repoRoot, folder), { withFileTypes: true })
-			.filter((entry) => entry.isDirectory())
-			.map((entry) => join(folder, entry.name, "package.json")),
-	),
-];
+function manifestPaths(root: string): readonly string[] {
+	return [
+		"package.json",
+		...["packages", "examples"].flatMap((folder) =>
+			readdirSync(join(root, folder), { withFileTypes: true })
+				.filter((entry) => entry.isDirectory())
+				.map((entry) => join(folder, entry.name, "package.json"))
+				.filter((path) => existsSync(join(root, path))),
+		),
+	];
+}
+
+const repoManifests = manifestPaths(repoRoot);
 
 test("every dependency of every package is pinned to one version", () => {
-	for (const path of manifestPaths) {
+	for (const path of repoManifests) {
 		const {
 			dependencies = {},
 			devDependencies = {},
@@ -61,7 +67,7 @@ test("every dependency of every package is pinned to one version", () => {
 });
 
 test("every peer dependency of every package is also its dev dependency at the same version", () => {
-	for (const path of manifestPaths) {
+	for (const path of repoManifests) {
 		const { devDependencies = {}, peerDependencies = {} } = readJson(join(repoRoot, path), manifest);
 		expect({ path, untested: peersNotTested(peerDependencies, devDependencies) }).toStrictEqual({
 			path,
@@ -82,4 +88,18 @@ test("the pinned check rejects ranges and tags", () => {
 	expect(
 		unpinned({ a: "^1.2.3", b: "~1.2.3", c: "latest", d: "npm:typescript@^7.0.0", e: "1.2.3", f: "workspace:*" }),
 	).toStrictEqual(["a@^1.2.3", "b@~1.2.3", "c@latest", "d@npm:typescript@^7.0.0"]);
+});
+
+test("a package folder that holds only node_modules has no manifest to check", () => {
+	const root = sandbox({
+		"package.json": "package.json",
+		"packages/petri-net/package.json": "packages/petri-net/package.json",
+		"examples/classics/package.json": "examples/classics/package.json",
+	});
+	mkdirSync(join(root, "packages", "net-view", "node_modules"), { recursive: true });
+	expect(manifestPaths(root)).toStrictEqual([
+		"package.json",
+		"packages/petri-net/package.json",
+		"examples/classics/package.json",
+	]);
 });
