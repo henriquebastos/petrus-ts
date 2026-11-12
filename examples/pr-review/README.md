@@ -1,8 +1,9 @@
-# 1 Deterministic PR review
+# 1 PR review demo
 
 This demo adopts new revisions while a review runs. It finishes every selected review, then selects the latest adopted
-revision. Intermediate revisions receive no review. The reviewer is a scripted fixture, not an LLM or a code analyzer.
-No credentials, network calls, GitHub publication, cancellation, or decision-model integration are required.
+revision. Intermediate revisions receive no review. The default reviewer is a scripted fixture, not an LLM or a code analyzer.
+The default recordings need no credentials or network calls. An opt-in command uses Anthropic Claude Opus 5.5.
+Neither mode publishes to GitHub, cancels reviews, or uses a decision model.
 
 ## 1a Run and inspect
 
@@ -71,8 +72,29 @@ The viewer build includes a source digest. The browser reads recordings and cann
 - An uncaught review error leaves its binding held without a report. Adoption continues, but another review cannot start.
   Test: `test/review.test.ts` "a review fault retains memory without stopping adoption or inventing a report".
 
-## 1d Limits
+## 1d Live Opus review
+
+Set `ANTHROPIC_API_KEY` in the host environment, then supply an output file:
+
+```sh
+pnpm --filter @petrus/example-pr-review live /tmp/pr-opus.json
+```
+
+`src/live.ts` records the A-to-C scenario with `src/opus.ts` as the reviewer. Each model request receives the selected
+immutable snapshot and previous findings. The prompt specifies the access rule: only administrators in the same
+tenant may read a document. TypeBox validates the JSON findings before the native task returns its result.
+
+The model makes two paid requests. Each request permits 4,096 output tokens and has a 120-second HTTP timeout.
+SDK retries are disabled, and the task adds no retry. Errors, incomplete output, and invalid findings leave memory held.
+The recorder rejects an unfinished run rather than writing a successful recording. No credentials enter the recording.
+Admission and sleeps still use controlled logical time. B and C arrive during A's native sleep, before its model call.
+This run demonstrates model integration; deterministic tests establish the selection cutoff.
+
+Test: `test/opus.test.ts` "Opus reviews selected snapshots with prior findings and settles validated reports".
+The viewer build continues to generate scripted recordings and never makes paid requests.
+
+## 1e Limits
 
 One fresh instance represents one PR. Ordered observations use consecutive admission numbers, not Git ancestry.
 The demo has a 1,000-start ceiling and in-memory storage. It does not demonstrate restart recovery or operator resolution.
-A live model, durable host storage, webhook reconciliation, and publication remain outside this deterministic version.
+Durable host storage, webhook reconciliation, and publication remain outside this demo.

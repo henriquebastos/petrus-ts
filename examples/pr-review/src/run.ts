@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Context } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai";
 import { createRegistry, defineTask, Harness, MemoryStorage } from "@earendil-works/pi-durable";
 import { definitionOrder } from "@petrus/petri-net";
@@ -12,6 +13,8 @@ import type { ReviewFindings, ReviewWork } from "./net.ts";
 
 export const context = BACKGROUND_CONTEXT;
 
+export type Reviewer = (work: ReviewWork, context: Context) => ReviewFindings | Promise<ReviewFindings>;
+
 export type Demo = {
 	readonly runtime: Runtime;
 	readonly instance: NetInstance;
@@ -22,18 +25,18 @@ export type Demo = {
 };
 
 /** Native sleeps make the scripted review finish only when the demo advances its clock. */
-export async function openDemo(reviewer: (work: ReviewWork) => ReviewFindings): Promise<Demo> {
+export async function openDemo(reviewer: Reviewer): Promise<Demo> {
 	let time = 0;
 	let quiet = Promise.withResolvers<undefined>();
 	const task = defineTask<ExecutionInput, { readonly phase: "wait" | "review" }, HandlerResult>({
-		name: "pr-review:scripted",
+		name: "pr-review:review",
 		version: 1,
 		initial: () => ({ phase: "wait" }),
 		phases: {
 			wait: ({ input }, rt, ctx) => rt.sleepUntil(input.startedAt + 10, { phase: "review" }, ctx),
-			review: ({ input }, rt, ctx) => {
+			review: async ({ input }, rt, ctx) => {
 				const { w } = Value.Parse(Type.Object({ w: Work }), input.binding);
-				const value = Value.Parse(Findings, reviewer(w));
+				const value = Value.Parse(Findings, await reviewer(w, ctx));
 				return rt.commit(
 					() => ({ status: "terminal", outcome: { status: "completed", result: { variant: "reviewed", value } } }),
 					ctx,

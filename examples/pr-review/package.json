@@ -7,7 +7,8 @@
 		".": "./src/record.ts"
 	},
 	"scripts": {
-		"record": "node src/main.ts"
+		"record": "node src/main.ts",
+		"live": "node src/live.ts"
 	},
 	"dependencies": {
 		"@earendil-works/chord": "1.4.0",

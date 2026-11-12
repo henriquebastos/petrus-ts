@@ -3,7 +3,7 @@ import { projectNet } from "@petrus/net-view-model";
 import { replay } from "@petrus/runtime-replay";
 import { Value } from "typebox/value";
 import { context, openDemo } from "./run.ts";
-import type { Demo } from "./run.ts";
+import type { Demo, Reviewer } from "./run.ts";
 import { scriptedReview, snapshots } from "./snapshots.ts";
 
 export const scenarios = {
@@ -13,9 +13,15 @@ export const scenarios = {
 };
 
 /** Records actual native tasks under both committed orders of the selection race. */
-export async function recordReview(scenario: keyof typeof scenarios): Promise<Recording> {
+export async function recordReview(
+	scenario: keyof typeof scenarios,
+	reviewer: { readonly run: Reviewer; readonly source: string } = {
+		run: scriptedReview,
+		source: "Deterministic scripted reviewer; real Petrus runtime and Durable tasks; no LLM calls",
+	},
+): Promise<Recording> {
 	const [a, b, c] = snapshots;
-	const demo = await openDemo(scriptedReview);
+	const demo = await openDemo(reviewer.run);
 	try {
 		await demo.admit(a);
 		await demo.runReady();
@@ -32,13 +38,13 @@ export async function recordReview(scenario: keyof typeof scenarios): Promise<Re
 			demo.moveTo(time);
 			await demo.runReady();
 		}
-		return await recordingOf(demo, scenarios[scenario]);
+		return await recordingOf(demo, scenarios[scenario], reviewer.source);
 	} finally {
 		await demo.close();
 	}
 }
 
-async function recordingOf(demo: Demo, title: string): Promise<Recording> {
+async function recordingOf(demo: Demo, title: string, source: string): Promise<Recording> {
 	const state = await demo.instance.state(context);
 	const frames = replay(demo.runtime.net, state.log);
 	if (!Value.Equal(frames.at(-1)?.marking, state.marking)) throw new Error("Replay differs from committed state");
@@ -46,7 +52,7 @@ async function recordingOf(demo: Demo, title: string): Promise<Recording> {
 	return {
 		format: "petrus-recording-1",
 		title,
-		source: "Deterministic scripted reviewer; real Petrus runtime and Durable tasks; no LLM calls",
+		source,
 		...projectNet(demo.runtime.net),
 		frames,
 		committedMarking: state.marking,
