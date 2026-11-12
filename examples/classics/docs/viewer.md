@@ -1,6 +1,6 @@
 # 1 Recorded net viewer
 
-The host shows producer-consumer and dining-philosopher recordings through the same viewer packages.
+The host shows producer-consumer, dining-philosopher, and PR-review recordings through the same viewer packages.
 It supports pan, zoom, node selection, token inspection, and history navigation. It cannot change or fire the net.
 The viewer follows the system color preference, including changes while the page is open.
 
@@ -18,7 +18,8 @@ The build writes the recording, then bundles the browser app. Rebuild to record 
 `../src/record-run.ts` uses the expanded `runtime.net`, runs native executions, and reads
 the committed state. `../../../packages/runtime-replay/src/replay.ts` applies each ingress and calls Petrus `fire` for each occurrence.
 The recorder rejects a replay whose final marking differs from the committed marking.
-The recording includes a SHA-256 digest of the local package sources and classical-net sources.
+The recording includes a SHA-256 digest of the local package and example sources.
+The [PR review demo](../../pr-review/README.md) adds three scripted recordings of revision selection races.
 
 Test: `../test/recording.test.ts` "records real handler runs with conserved slots and the committed final tokens".
 
@@ -47,7 +48,7 @@ The clock records logical ticks, not elapsed milliseconds. The browser only read
 The initial position shows the first ingress. The first-frame button shows the empty instance before that ingress.
 The final frame contains three used items and two free slots. Reload returns to the first ingress.
 ELK supplies automatic node placement and arc routes through the separate layout package.
-The package accepts other valid Petrus nets. The example selector offers two recorded nets.
+The package accepts other valid Petrus nets. The example selector offers two classical recordings and three PR-review recordings.
 File import and editing are not supported yet. Forward animation illustrates arc flow, not runtime duration.
 
 ## 1c Repeat the browser proof
@@ -60,7 +61,7 @@ The orb supplies this executable. `knip.json` permits that external binary only 
 pnpm --filter @petrus/example-classics verify:viewer http://localhost:5300
 ```
 
-`../verify-viewer.ts` uses the browser controls at all 37 positions across both recordings. It checks node counts, arcs, enabled
+`../verify-viewer.ts` uses the browser controls at all 121 positions across five recordings. It checks node counts, arcs, enabled
 transitions, inspected token values, final items, and reload against the served recording.
 The recorder tests exercise real Durable tasks. The UI tests use jsdom without layout.
 Browser inspection is still required for layout and pointer behavior.

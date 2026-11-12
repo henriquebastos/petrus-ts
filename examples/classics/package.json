@@ -10,6 +10,7 @@
 		"verify:viewer": "node verify-viewer.ts"
 	},
 	"dependencies": {
+		"@petrus/example-pr-review": "workspace:*",
 		"@petrus/net-view-model": "workspace:*",
 		"@petrus/net-layout": "workspace:*",
 		"@petrus/net-viewer-react": "workspace:*",

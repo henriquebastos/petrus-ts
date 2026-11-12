@@ -49,6 +49,9 @@ export function App({ request }: { readonly request: typeof fetch }): ReactEleme
 					>
 						<option value="run.json">Producer & consumer</option>
 						<option value="dining.json">Dining philosophers</option>
+						<option value="pr-skip-b.json">PR review: skip B</option>
+						<option value="pr-arrival-first.json">PR review: C arrives first</option>
+						<option value="pr-selection-first.json">PR review: B selected first</option>
 					</select>
 				}
 			/>

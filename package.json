@@ -23,7 +23,7 @@
 		"scale:state": "node scripts/check-scale-state.ts",
 		"test": "vitest run --coverage",
 		"test:gates": "vitest run --config vitest.gates.config.ts",
-		"typecheck": "tsc -p packages/petri-net/tsconfig.json && tsc -p packages/runtime/tsconfig.json && tsc -p packages/net-view-model/tsconfig.json && tsc -p packages/net-layout/tsconfig.json && tsc -p packages/runtime-replay/tsconfig.json && tsc -p packages/net-viewer-react/tsconfig.json && tsc -p examples/comment-replies/tsconfig.json && tsc -p examples/classics/tsconfig.json && tsc -p tsconfig.json"
+		"typecheck": "tsc -p packages/petri-net/tsconfig.json && tsc -p packages/runtime/tsconfig.json && tsc -p packages/net-view-model/tsconfig.json && tsc -p packages/net-layout/tsconfig.json && tsc -p packages/runtime-replay/tsconfig.json && tsc -p packages/net-viewer-react/tsconfig.json && tsc -p examples/comment-replies/tsconfig.json && tsc -p examples/classics/tsconfig.json && tsc -p examples/pr-review/tsconfig.json && tsc -p tsconfig.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.6.2",

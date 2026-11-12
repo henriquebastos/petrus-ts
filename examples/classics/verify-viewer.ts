@@ -121,11 +121,34 @@ try {
 	console.log(
 		`PASS: the same viewer renders all ${String(dining.frames.length)} dining positions, ${String(dining.nodes.length)} nodes, and ${String(dining.arcs.length)} arcs. All philosophers finish and all forks return.`,
 	);
+	for (const scenario of ["skip-b", "arrival-first", "selection-first"] as const) {
+		const file = `pr-${scenario}.json`;
+		const run = readRecording(await (await fetch(new URL(file, url), { headers: { Connection: "close" } })).json());
+		assert.deepEqual(
+			run,
+			readRecording(JSON.parse(await readFile(new URL(`viewer/public/${file}`, import.meta.url), "utf8"))),
+		);
+		const reports = parseJson(
+			JSON.stringify(run.committedMarking.Reports),
+			Type.Array(Type.Object({ seq: Type.Integer() })),
+		);
+		assert.deepEqual(
+			reports.map(({ seq }) => seq),
+			scenario === "selection-first" ? [1, 2, 3] : [1, 3],
+		);
+		browser("select", '[aria-label="Example net"]', file);
+		browser("wait", "--text", run.title);
+		browser("wait", "--fn", `document.querySelectorAll('.react-flow__edge').length === ${String(run.arcs.length)}`);
+		verifyFrames(run, "Reports");
+		console.log(
+			`PASS: ${scenario}, ${String(run.frames.length)} positions, all token values and enabled bindings, reports ${reports.map(({ seq }) => seq).join(", ")}.`,
+		);
+	}
 	browser("select", '[aria-label="Example net"]', "run.json");
 	browser("wait", "--text", "Producer & consumer");
 	assert.equal(parseJson(browser("eval", "--json", inspect), observation).data.result.cursor, "1 / 19");
 	console.log(
-		"PASS: switching nets resets selection and replay. Both served recordings match the local runtime output.",
+		"PASS: switching nets resets selection and replay. All served recordings match the local runtime output.",
 	);
 } finally {
 	browser("close");
