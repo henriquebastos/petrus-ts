@@ -20,14 +20,14 @@ if (stateDirectory === undefined) {
 const context = BACKGROUND_CONTEXT;
 // eslint-disable-next-line no-restricted-properties -- the composition root makes the clock that the runtime takes
 const clock = { now: () => Date.now() };
-// The net has no handler transitions, so no operation runs and the retry delay never applies.
+// This demo permits 10,000 reply starts per stored instance. Reopening does not reset that ceiling.
 const runtime = createRuntime({
 	name: "comment-replies",
 	nonce: randomUUID(),
 	net,
 	policy: definitionOrder,
 	clock,
-	retryDelayMs: 1_000,
+	startLimit: 10_000,
 });
 const registry = createRegistry();
 registry.install(runtime.extension);
@@ -40,6 +40,7 @@ try {
 	for (const path of deliveryPaths) {
 		const delivery = Value.Parse(Delivery, JSON.parse(await readFile(path, "utf8")));
 		const handled = await handleDelivery(instance, delivery, context);
+		await harness.waitForIdle(context);
 		const summary =
 			handled.kind === "ignored" ? `ignored: ${handled.reason}` : `fired ${String(handled.fired.length)}`;
 		console.log(`${delivery.id} ${summary}`);

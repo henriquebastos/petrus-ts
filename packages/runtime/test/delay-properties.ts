@@ -1,14 +1,23 @@
 import { randomUUID } from "node:crypto";
+import { defineTask } from "@earendil-works/pi-durable";
 import fc from "fast-check";
 import type { ColourSet, Net, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, placeId, tokenKey, tokensAt, transitionId } from "@petrus/petri-net";
-import type { DelayedResult, Handler, HandlerTransition, NetInstanceState, RuntimeOptions } from "../src/index.ts";
-import { withHandlers } from "../src/index.ts";
+import type {
+	Execution,
+	ExecutionInput,
+	HandlerResult,
+	HandlerTransition,
+	NetInstanceState,
+	RuntimeOptions,
+} from "../src/index.ts";
+import { execution } from "../src/index.ts";
 import { startedOperations } from "../src/operations.ts";
 import type { Disk, TestClock } from "./disk.ts";
 import { createClock, createDisk, enqueueAndSettle } from "./disk.ts";
 import type { Fault, RuntimeFactory } from "./properties.ts";
 import { everyCommitHeld, faultArbitrary, lastState } from "./properties.ts";
+import { completeSaved } from "./native-execution.ts";
 
 const reminder: ColourSet = { name: "Reminder", contains: (token) => typeof token === "string" && /^r\d$/.test(token) };
 
@@ -33,39 +42,56 @@ export function remindTransition(
 /** The net without its handler transition. The runtime adds it from the handler. */
 const remindersNet: Net = { places: [requested, reminded], transitions: [] };
 
-/** The plain net that the runtime runs, for replay. */
-const plainRemindersNet: Net = withHandlers(remindersNet, [remindTransition()]);
+type ReminderSchedule = { readonly delayMs: number; readonly result: HandlerResult };
+type Checkpoint = { readonly phase: "run" } | { readonly phase: "due"; readonly result: HandlerResult };
 
 /** A handler of `transition` whose answer for each run comes from `answer`, given the reminder and the run's number. */
 export function reminderHandler(
-	answer: (r: Token, run: number) => DelayedResult,
+	answer: (r: Token, run: number) => ReminderSchedule,
 	transition: HandlerTransition<"r"> = remindTransition(),
-): Handler<"r"> & { readonly runs: () => number } {
+): Execution & { readonly runs: () => number } {
 	let runs = 0;
-	return {
-		transition,
-		run: ({ r }) => {
-			runs += 1;
-			return Promise.resolve(answer(r, runs));
+	const task = defineTask<ExecutionInput, Checkpoint, HandlerResult>({
+		name: `reminder-test:${randomUUID()}`,
+		version: 1,
+		initial: () => ({ phase: "run" }),
+		phases: {
+			run: async ({ input }, runtime, context) => {
+				runs += 1;
+				const { delayMs, result } = answer(input.binding.r ?? null, runs);
+				if (!Number.isFinite(delayMs) || delayMs < 0) {
+					throw new RangeError(
+						`a delay must be a finite number of milliseconds, at least 0, not ${String(delayMs)}`,
+					);
+				}
+				await runtime.sleepUntil(input.startedAt + delayMs, { phase: "due", result }, context);
+			},
+			due: completeSaved,
 		},
+		abort: async (_task, runtime, context) => {
+			await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context);
+		},
+	});
+	return {
+		...execution(transition, task),
 		runs: () => runs,
 	};
 }
 
 /** A delay of `delayMs` for the result `elapsed` of reminder `r`. */
-export function elapsedAfter(r: Token, delayMs: number): DelayedResult {
+export function elapsedAfter(r: Token, delayMs: number): ReminderSchedule {
 	return { delayMs, result: { variant: "elapsed", value: r } };
 }
 
-export function remindersOptions(handler: Handler, clock: TestClock): RuntimeOptions {
+export function remindersOptions(handler: Execution, clock: TestClock): RuntimeOptions {
 	return {
 		name: "reminders",
 		nonce: randomUUID(),
 		net: remindersNet,
 		policy: definitionOrder,
 		clock,
-		handlers: [handler],
-		retryDelayMs: 1,
+		executions: [handler],
+		startLimit: 100,
 	};
 }
 
@@ -98,6 +124,7 @@ function countedOnTime(at: number | undefined, due: number, opened: readonly num
  * `reminded` once, and each result is in the log at its due time (see `resultsOnTime`): not before, and not later.
  */
 function delaysHeld(
+	net: Net,
 	history: readonly NetInstanceState[],
 	delays: ReadonlyMap<string, number>,
 	opened: readonly number[],
@@ -105,7 +132,7 @@ function delaysHeld(
 	const final = lastState(history);
 	const sorted = (place: Place): string => JSON.stringify(tokensAt(final.marking, place.id).map(tokenKey).sort());
 	return (
-		everyCommitHeld(plainRemindersNet, definitionOrder, history) &&
+		everyCommitHeld(net, definitionOrder, history) &&
 		sorted(reminded) === JSON.stringify([...delays.keys()].map(tokenKey).sort()) &&
 		sorted(requested) === "[]" &&
 		resultsOnTime(final, delays, opened)
@@ -135,7 +162,7 @@ export function delayFaultProperty(
 ): fc.IAsyncProperty<[ReadonlyMap<string, number>, Fault, number]> {
 	return fc.asyncProperty(
 		delaysArbitrary,
-		faultArbitrary(12),
+		faultArbitrary(48),
 		fc.nat({ max: 60 }),
 		async (delays, fault, outageMs) => {
 			const clock = createClock(100);
@@ -144,7 +171,7 @@ export function delayFaultProperty(
 			const disk: Disk = createDisk([runtime.extension], clock);
 			const reminders = { requestId: "first", tokens: { [requested.id]: [...delays.keys()] } };
 			const opened = await enqueueAndSettle(disk, { [fault.kind]: fault.commit }, runtime, reminders, outageMs);
-			return delaysHeld(disk.history(), delays, opened);
+			return delaysHeld(runtime.net, disk.history(), delays, opened);
 		},
 	);
 }

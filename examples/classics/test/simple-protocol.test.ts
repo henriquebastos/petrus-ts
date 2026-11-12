@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { Marking, Place, Token } from "@petrus/petri-net";
-import { definitionOrder, tokensAt } from "@petrus/petri-net";
+import { definitionOrder, tokensAt, transitionId } from "@petrus/petri-net";
 import type { Runtime } from "@petrus/runtime";
-import { createRuntime } from "@petrus/runtime";
+import { busyPlaceId, createRuntime } from "@petrus/runtime";
 import { describe, expect, onTestFinished, test } from "vitest";
 import type { Network } from "../src/simple-protocol.ts";
 import {
@@ -46,8 +46,8 @@ function runtimeOf(network: Network): Runtime {
 		net: simpleProtocol,
 		policy: definitionOrder,
 		clock,
-		handlers: simpleProtocolHandlers(network, waitMs),
-		retryDelayMs: 0,
+		executions: simpleProtocolHandlers(network, waitMs),
+		startLimit: 10_000,
 	});
 }
 
@@ -59,12 +59,28 @@ function only(marking: Marking, place: Place): Token | undefined {
 
 /** The receiver has the data of the packets before the one it expects, each once and in order. */
 function receivedInOrder(marking: Marking, data: readonly string[]): boolean {
-	const k = only(marking, nextRec);
+	const receiver = held(marking, "ReceivePacket");
+	const sender = [...held(marking, "SendPacket"), ...held(marking, "ReceiveAck")];
+	const k = [...tokensAt(marking, nextRec.id), ...receiver.map((binding) => binding.k)];
+	const received = [...tokensAt(marking, dataReceived.id), ...receiver.map((binding) => binding.data)];
 	return (
-		only(marking, nextSend) !== undefined &&
-		typeof k === "number" &&
-		only(marking, dataReceived) === data.slice(0, k - 1).join("")
+		tokensAt(marking, nextSend.id).length + sender.length === 1 &&
+		k.length === 1 &&
+		received.length === 1 &&
+		typeof k[0] === "number" &&
+		received[0] === data.slice(0, k[0] - 1).join("")
 	);
+}
+
+function held(marking: Marking, transition: string): readonly Readonly<Record<string, Token>>[] {
+	return tokensAt(marking, busyPlaceId(transitionId(transition))).map((token) => {
+		if (typeof token !== "object" || token === null || isList(token)) throw new Error("busy token is not a binding");
+		return token;
+	});
+}
+
+function isList(token: Token): token is readonly Token[] {
+	return Array.isArray(token);
 }
 
 /** The places that hold the state of the sender and the receiver when no message or work is left. */

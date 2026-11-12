@@ -42,10 +42,16 @@ Each invariant names the test that proves it. Paths are relative to this package
 ## 5 Indexed steps
 
 `indexMarking(net, marking)` builds a linear owner from stored token order, with an empty journal.
-`stepIndexed(indexed, policy)` returns `{ indexed, fired }`. `addTokensIndexed(indexed, place, tokens)` returns a new
+`stepIndexed(indexed, policy, limit?)` returns `{ indexed, fired, limited }`. `addTokensIndexed(indexed, place, tokens)` returns a new
 owner. Both consume the old owner before callbacks run. Discard a consumed owner after any failure.
 `enabledElementsIndexed` and `markingOfIndexed` read without consuming. Materializing a marking costs all live tokens.
 The pure `fire`, `fireStep`, `enabledBindings`, and `enabledElements` remain unchanged as the oracle.
+
+The optional firing limit applies after allocation resolves token conflicts. If the allocated step exceeds the limit,
+the engine fires nothing and returns an unchanged marking and journal with `limited: true`. It never truncates a step.
+Without a limit, all allocated elements fire. Tests: `test/indexed-step.test.ts`
+"a firing limit refuses the whole allocated step and preserves its journal for a later attempt",
+"a firing limit counts allocated elements rather than competing policy candidates".
 
 Each place keeps arrival numbers and FIFO copies per value key. Each transition caches candidates and their demands.
 Rejected combinations retain front watchers. A different front representative replaces the cached guard and demand,

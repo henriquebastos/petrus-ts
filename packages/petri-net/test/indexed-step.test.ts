@@ -45,6 +45,34 @@ const transfer: Transition<"x"> = {
 };
 const net: Net = { places: [a, b, c], transitions: [transfer] };
 
+test.prop([fc.integer({ min: 1, max: 12 })])(
+	"a firing limit refuses the whole allocated step and preserves its journal for a later attempt",
+	(count) => {
+		const tokens = Array.from({ length: count }, (_, index) => index);
+		const indexed = addTokensIndexed(indexMarking(net, {}), a.id, tokens);
+		const journal = [...indexed.journal];
+		const refused = stepIndexed(indexed, definitionOrder, count - 1);
+		expect(refused.limited).toBe(true);
+		expect(refused.fired).toStrictEqual([]);
+		expect(markingOfIndexed(refused.indexed)).toStrictEqual({ [a.id]: tokens });
+		expect(refused.indexed.journal).toStrictEqual(journal);
+		const accepted = stepIndexed(refused.indexed, definitionOrder, count);
+		expect(accepted.limited).toBe(false);
+		expect(accepted.fired).toHaveLength(count);
+		expect(markingOfIndexed(accepted.indexed)).toStrictEqual({ [b.id]: tokens });
+	},
+);
+
+test("a firing limit counts allocated elements rather than competing policy candidates", () => {
+	const stepped = stepIndexed(indexMarking(net, { [a.id]: [7] }), (enabled) => [...enabled, ...enabled], 1);
+	expect(stepped.limited).toBe(false);
+	expect(stepped.fired).toHaveLength(1);
+	expect(markingOfIndexed(stepped.indexed)).toStrictEqual({ [b.id]: [7] });
+	const quiet = stepIndexed(stepped.indexed, definitionOrder, 0);
+	expect(quiet.limited).toBe(false);
+	expect(quiet.fired).toStrictEqual([]);
+});
+
 function replay(start: Marking, journal: readonly MarkingJournalOp[]): Marking {
 	const places = new Map(Object.entries(start).map(([place, tokens]) => [place, [...tokens]]));
 	for (const op of journal) {

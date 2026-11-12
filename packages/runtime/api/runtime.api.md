@@ -16,9 +16,12 @@ import type { Net } from '@petrus/petri-net';
 import type { Place } from '@petrus/petri-net';
 import type { PlaceId } from '@petrus/petri-net';
 import type { SelectionPolicy } from '@petrus/petri-net';
+import type { Task } from '@earendil-works/pi-durable';
+import type { TaskId } from '@earendil-works/pi-durable';
 import type { Token } from '@petrus/petri-net';
 import type { Transition } from '@petrus/petri-net';
 import type { TransitionId } from '@petrus/petri-net';
+import type { Tx } from '@earendil-works/pi-durable';
 
 // @public
 export type Batch = {
@@ -44,21 +47,23 @@ export type Committed = {
 export function createRuntime(options: RuntimeOptions): Runtime;
 
 // @public
-export type DelayedResult = {
-    readonly delayMs: number;
-    readonly result: HandlerResult;
+export type Execution = {
+    readonly transition: HandlerTransition;
+    readonly extension: Extension;
+    readonly launch: (tx: Tx, input: ExecutionInput, owner: TaskId) => Promise<TaskId<HandlerResult>>;
 };
 
 // @public
-export type Handler<V extends string = string> = {
-    readonly transition: HandlerTransition<V>;
-    readonly run: (binding: Binding<V>, context: HandlerContext) => Promise<HandlerResult | DelayedResult>;
-};
+export function execution<S extends {
+    readonly phase: string;
+}, H extends object>(transition: HandlerTransition, task: Task<ExecutionInput, S, HandlerResult, H>): Execution;
 
 // @public
-export type HandlerContext = {
-    readonly operationId: string;
-    readonly signal: Signal;
+export type ExecutionInput = {
+    readonly id: string;
+    readonly transition: TransitionId;
+    readonly binding: Binding;
+    readonly startedAt: number;
 };
 
 // @public
@@ -86,6 +91,8 @@ export type NetInstance = {
     readonly enqueue: (batch: Batch, context: Context) => Promise<Committed>;
     readonly state: (context: Context) => Promise<NetInstanceState>;
     readonly inFlight: (context: Context) => Promise<readonly Operation[]>;
+    readonly budget: (context: Context) => Promise<StartBudget>;
+    readonly raiseStartLimit: (ceiling: number, context: Context) => Promise<Committed>;
     readonly abort: (operationId: string, context: Context) => Promise<"marked" | "terminal">;
     readonly resolve: (operationId: string, result: HandlerResult, context: Context) => Promise<Committed>;
 };
@@ -123,6 +130,7 @@ export function resultPlaceId(transition: TransitionId): PlaceId;
 
 // @public
 export type Runtime = {
+    readonly net: Net;
     readonly extension: Extension;
     readonly instance: (host: NetInstanceHost, conversationId: ConversationId) => NetInstance;
 };
@@ -134,12 +142,19 @@ export type RuntimeOptions = {
     readonly net: Net;
     readonly policy: SelectionPolicy;
     readonly clock: Clock;
-    readonly handlers?: readonly Handler[];
-    readonly retryDelayMs: number;
+    readonly executions?: readonly Execution[];
+    readonly startLimit: number;
 };
 
 // @public
 export type Signal = NonNullable<Context["abortSignal"]>;
+
+// @public
+export type StartBudget = {
+    readonly ceiling: number;
+    readonly used: number;
+    readonly paused: boolean;
+};
 
 // @public
 export type Variant<V extends string = string> = {

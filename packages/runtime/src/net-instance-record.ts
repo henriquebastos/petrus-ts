@@ -5,7 +5,7 @@ import type { Marking, MarkingJournalOp, Token } from "@petrus/petri-net";
 import { indexMarking, markingProblems, placeId, transitionId } from "@petrus/petri-net";
 import type { IngressBuckets } from "./ingress-index.ts";
 import { buildIngressIndex, ingressIndexOf, insertIngress } from "./ingress-index.ts";
-import type { Ingress, LogEntry, NetInstanceState } from "./net-instance.ts";
+import type { Ingress, LogEntry, NetInstanceState, StartBudget } from "./net-instance.ts";
 import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 
@@ -23,6 +23,8 @@ type StoredEntry =
  */
 export type NetInstanceRecord = {
 	net: string;
+	model: string;
+	budget: StartBudget | null;
 	stamp: string;
 	marking: StoredMarking;
 	log: StoredEntry[];
@@ -39,7 +41,15 @@ export const netInstanceRecord: ConversationDocToken<NetInstanceRecord> = define
 	scope: "conversation",
 	history: "latest",
 	fork: "initial",
-	initial: () => ({ net: "", stamp: "", marking: {}, log: [], ingresses: buildIngressIndex([]) }),
+	initial: () => ({
+		net: "",
+		model: "native-v1",
+		budget: null,
+		stamp: "",
+		marking: {},
+		log: [],
+		ingresses: buildIngressIndex([]),
+	}),
 	checkpointWhen: () => false,
 });
 

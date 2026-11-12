@@ -76,7 +76,7 @@ export function faultArbitrary(maxCommit: number): fc.Arbitrary<Fault> {
 }
 
 export function contestedOptions(policy: SelectionPolicy, clock: TestClock): RuntimeOptions {
-	return { name: "contested", nonce: randomUUID(), net: contested, policy, clock, retryDelayMs: 10 };
+	return { name: "contested", nonce: randomUUID(), net: contested, policy, clock, executions: [], startLimit: 100 };
 }
 
 function batch(requestId: string, tokens: readonly string[]): Batch {
@@ -114,16 +114,16 @@ function untimed(log: readonly LogEntry[]): string {
 }
 
 /** The untimed log of the batches, each added in order from no tokens and followed by steps until the net is quiet. */
-function modelLog(batches: readonly Batch[], policy: SelectionPolicy): string {
+function modelLog(net: Net, batches: readonly Batch[], policy: SelectionPolicy): string {
 	let marking: Marking = {};
 	const entries: unknown[] = [];
 	for (const added of batches) {
 		marking = withAdded(marking, added.tokens);
 		entries.push(added);
-		for (let step = fireStep(contested, marking, policy); step.fired.length > 0; ) {
+		for (let step = fireStep(net, marking, policy); step.fired.length > 0; ) {
 			marking = step.marking;
 			entries.push(...step.fired);
-			step = fireStep(contested, marking, policy);
+			step = fireStep(net, marking, policy);
 		}
 	}
 	return JSON.stringify(entries);
@@ -164,8 +164,8 @@ export function crashProperty(factory: RuntimeFactory): fc.IAsyncProperty<[reado
 		const { log } = lastState(disk.history());
 		return (
 			recovered === "done" &&
-			everyCommitHeld(contested, policy, disk.history()) &&
-			untimed(log) === modelLog(batches, policy) &&
+			everyCommitHeld(runtime.net, policy, disk.history()) &&
+			untimed(log) === modelLog(runtime.net, batches, policy) &&
 			JSON.stringify(acknowledged) === JSON.stringify(log.filter((entry) => entry.kind === "ingress"))
 		);
 	});
@@ -223,7 +223,7 @@ export function raceProperty(
 			const distinctIds = new Set(sent.map((delivery) => delivery.requestId)).size;
 			return (
 				outcome === "done" &&
-				everyCommitHeld(contested, policy, disk.history()) &&
+				everyCommitHeld(runtime.net, policy, disk.history()) &&
 				raceHeld(disk.history(), committed, distinctIds)
 			);
 		},

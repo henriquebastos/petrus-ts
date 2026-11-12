@@ -1,8 +1,7 @@
-export type { Batch, Ingress, LogEntry, NetInstanceState, Occurrence } from "./net-instance.ts";
+export type { Batch, Ingress, LogEntry, NetInstanceState, Occurrence, StartBudget } from "./net-instance.ts";
+export type { Execution, ExecutionInput } from "./execution.ts";
+export { execution } from "./execution.ts";
 export type {
-	DelayedResult,
-	Handler,
-	HandlerContext,
 	HandlerResult,
 	HandlerTransition,
 	ResultArc,

@@ -1,38 +1,31 @@
-// Planted defect: a commit runs the handler of each operation it starts before the commit lands, so the outside
-// service does work for a firing that a crash can still undo.
+// Planted defect: invoke the native worker before its allocation commit can land.
 import type { Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
-import { createRuntime, withHandlers } from "../../packages/runtime/src/index.ts";
 import { admit } from "../../packages/runtime/src/admit.ts";
-import { createOperationRun } from "../../packages/runtime/src/operation-run.ts";
-import { createNetInstanceCache } from "../../packages/runtime/src/net-instance-cache.ts";
-import type { NetInstanceParts, StartOperation } from "../../packages/runtime/src/net-instance-commit.ts";
 import { commitToNetInstance } from "../../packages/runtime/src/net-instance-commit.ts";
+import { nativeFixture } from "./native-fixture.ts";
+import type { Worker } from "./native-fixture.ts";
 
 export function createEarlyStartRuntime(options: RuntimeOptions): Runtime {
-	const runtime = createRuntime(options);
-	const handlers = options.handlers ?? [];
-	const net = withHandlers(options.net, handlers.map((handler) => handler.transition));
-	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
-	const cache = createNetInstanceCache(`${options.nonce}:fixture`);
-	const { start } = createOperationRun({ ...options, cache, net, handlerIds, handlers }).parts;
-	const earlyStart: StartOperation = (tx, conversationId, operation, startedAt) => {
-		const handler = handlers.find((candidate) => candidate.transition.id === operation.transition);
-		// The early run only shows the defect; its result and its errors are dropped.
-		void handler?.run(operation.binding, { operationId: operation.id, signal: new AbortController().signal }).catch(() => undefined);
-		return start(tx, conversationId, operation, startedAt);
-	};
-	const parts: NetInstanceParts = { name: options.name, cache, net, policy: options.policy, handlerIds, start: earlyStart };
-	return {
-		extension: runtime.extension,
-		instance: (host, conversationId) => ({
-			...runtime.instance(host, conversationId),
-			enqueue: (batch, context) => {
-				const at = options.clock.now();
-				return host.commit(
-					(tx) => commitToNetInstance(tx, conversationId, parts, (current) => admit(net, current, batch, at), at),
-					context,
-				);
-			},
-		}),
-	};
+	const { runtime, parts } = nativeFixture(options);
+	return { ...runtime, instance: (host, conversationId) => ({
+		...runtime.instance(host, conversationId),
+		enqueue: (batch, context) => host.commit((tx) => {
+			const at = options.clock.now();
+			return commitToNetInstance(tx, conversationId, { ...parts,
+				start: async (transaction, conversation, operation, startedAt) => {
+					const registered = options.executions?.find(({ transition }) => transition.id === operation.transition);
+					const worker = registered?.extension.tasks?.[0] as Worker | undefined;
+					const run = worker?.definition.phases.run;
+					if (run !== undefined) {
+						// Only the external call is exercised. Its attempted state changes are deliberately discarded.
+						const running = { input: { ...operation, startedAt } } as Parameters<typeof run>[0];
+						const earlyRuntime = { now: options.clock.now, signal: new AbortController().signal,
+							commit: () => Promise.resolve(), sleepUntil: () => Promise.resolve() } as unknown as Parameters<typeof run>[1];
+						await run(running, earlyRuntime, context).catch(() => undefined);
+					}
+					return parts.start(transaction, conversation, operation, startedAt);
+				},
+			}, (current) => admit(runtime.net, current, batch, at), at);
+		}, context),
+	}) };
 }

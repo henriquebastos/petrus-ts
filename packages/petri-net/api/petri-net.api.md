@@ -177,9 +177,10 @@ export type Shortfall = {
 };
 
 // @public
-export function stepIndexed(indexed: IndexedMarking, policy: SelectionPolicy): {
+export function stepIndexed(indexed: IndexedMarking, policy: SelectionPolicy, limit?: number): {
     readonly indexed: IndexedMarking;
     readonly fired: readonly BindingElement[];
+    readonly limited: boolean;
 };
 
 // @public

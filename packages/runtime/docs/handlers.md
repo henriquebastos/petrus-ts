@@ -1,124 +1,82 @@
-# Handler transitions
+# 1 Native executions and handler transitions
 
-The core rule:
+An authored transition reserves its inputs and creates a coordinator in one transaction. The coordinator launches
+one owned native Durable task. It admits that task's declared result only after the task becomes terminal.
+Internal start and end transitions do not create execution tasks of their own.
 
-> Firing a handler transition creates its operation and task atomically. The task runs the handler outside the net.
-> One commit records its result under `result:<operation id>`, steps until quiet, and ends the task.
-> Handlers run at least once. Only the first result counts.
+## 1a Authoring
 
-## 1 Terms
+`HandlerTransition` in `src/handlers.ts` declares variables, a guard, input arcs, and result variants.
+Each variant has a value colour set and output arcs that read the original binding and the result value.
+`HandlerResult` is `{ variant, value }`.
 
-- A **handler transition** (`HandlerTransition` in `src/handlers.ts`) has variables, a guard and input arcs like a
-  transition, but no output arcs. It has **variants** instead: each one names a way the work can end, the colour
-  set of its **value**, and output arcs whose expressions read the binding and the value.
-- A **handler** (`Handler`) is a handler transition with `run(binding, { operationId, signal })`, which returns a
-  **result** `{ variant, value }`. An expected failure is a variant; a throw means a bug or an outage.
-- `withHandlers(net, transitions)` returns the **plain net** that a net with handler transitions is short for. Each
-  handler transition `t` becomes:
-  - the transition `t`, with the same variables, guard and inputs, whose output arc puts the binding on `t:busy`;
-  - the place `t:result`, which holds result tokens `{ binding, variant, value }`;
-  - for each variant `v`, the transition `t:v`, which takes a binding from `t:busy` and a result with variant `v`
-    for that binding from `t:result`, and produces the variant's outputs.
+`execution(transition, task)` in `src/execution.ts` pairs that declaration with a native Durable task.
+The task receives `ExecutionInput`: `{ id, transition, binding, startedAt }`.
+Its phases and checkpoint types remain native. Executions with different checkpoint unions and hooks can share
+one runtime without casts. Install native child task definitions in the Harness registry too.
+Task names must be unique in that registry.
 
-  Input tokens stay taken throughout the work. The petri-net checks and replay still apply.
-  The start keeps declared join keys. Ends join busy bindings to result bindings, preserving `{busy, result}` occurrences.
-- An **operation** is the work that one occurrence of `t` started. Its id is `t/<position of the occurrence in the
-  log>`, so it stays the same after a restart. It is **in flight** until the log holds its result.
-  `inFlight(context)` lists the operations in flight, in log order.
-- A **handler task**, kind `petrus.operation:<net name>`, belongs to the instance's conversation. Its phase `run` calls the
-  handler with the operation's binding and id. Then one commit records the result, steps the net, and ends the
-  task as `completed`. Its time comes from the Harness's clock. A handler can also return a
-  **delayed result**: see [delays.md](delays.md).
-- When a phase throws, the task reports the error (`onReport`), sleeps for `retryDelayMs`, and runs the phase
-  again, unless the net instance is broken. The operation stays in flight.
-- No task runs until the host calls `harness.resume()`.
+Test: `test/execution.test.ts`
+"registers unrelated native tasks and preserves their input, ownership, checkpoints and results".
 
-## 2 Guarantees
+The task owns retries, sleeps, children, and abort behavior. Petrus adds neither automatic retries nor a cancellation
+result. An uncaught native error faults the execution. A completed, failed, or aborted outcome can carry a declared
+result. A missing result, fault, or orphan leaves the binding unresolved.
+Tests: `test/execution.test.ts` "keeps the native task's abort result",
+"leaves an uncaught native error faulted instead of adding retries or a result".
 
-Paths are relative to this package.
+Plain transitions in `RuntimeOptions.net` also use this lifecycle. A minimal native task returns the unit result
+`done`; settlement evaluates the original output arcs. `runtime.net` is the expanded net for replay and inspection.
 
-- `withHandlers` adds the parts above with no net problems.
-  Test: `test/handlers.test.ts` "makes a handler transition a start transition, a busy place, a result place and
-  an end per variant".
-- The busy place holds only bindings of the transition. The result place holds only results with a declared
-  variant, a value of that variant's colour set, and a binding of the transition.
-  Test: `test/handlers.test.ts` "the busy place holds only bindings of the transition, and the result place only
-  declared results".
-- An end fires only for a result of its own variant and binding, in any key order.
-  Test: `test/handlers.test.ts` "an end fires only for a result of its own variant and its own run".
-- Test: `test/handlers.test.ts` "handler joins preserve matching results and busy arrival order".
-- The indexed engine checks at most one end candidate per variant for each result, regardless of busy-run count.
-  Test: `test/handlers.test.ts` "one handler result checks only its matching run, regardless of the number of busy runs".
-- An operation's id is its transition and its position in the log, and it is in flight until the log holds its
-  result. Tests: `test/handlers.test.ts` "names each operation by its transition and its position in the log",
-  "an operation is in flight until the log holds its result".
-- The first result of an operation counts: a later one returns the recorded ingress.
-  Test: `test/handlers.test.ts` "puts a result on the result place under the operation's request id; the first
-  result counts".
-- A commit that fires a handler transition creates the operation's task, and runs no handler. The task runs the
-  handler, records the result, and steps the net until it is quiet. The handler's variant chooses the end.
-  Tests: `test/handlers.test.ts` "an enqueue starts an operation and creates its task in one commit; the task runs
-  the handler, records its result and steps until quiet", "the handler tasks end every operation by the variant
-  that its handler returns".
-- With no variant `aborted` ([aborts.md](aborts.md)), an aborted task ends as `aborted`, also while its handler
-  runs: no result is recorded and nothing is reported. Tests: `test/handlers.test.ts` "aborting a handler task
-  ends it as aborted without running the handler, and its operation stays in flight", "aborting a task while its
-  handler runs ends it as aborted, records no result and reports nothing".
-- A process dies before or after any storage commit lands, and the service has one outage. A new process
-  enqueues the first batch again and runs the tasks. At every commit the marking is the replay of the log
-  and the net is quiet. Each job ended once. Each operation has one result, under its own
-  request id. The service did no work for an operation that the log does not hold, and no handler ran before the
-  commit of its occurrence landed. Test: `test/handlers.test.ts` "each job ends once after a crash before or after
-  any commit, and after the service's outage", with `handlerFaultProperty` in `test/handler-properties.ts`.
-- With a late batch and handler runs that end in any order, the same holds. The outage is reported once. Each
-  operation's handler ran once, and the one with the outage twice. At most two handlers ran at once. Test:
-  `test/handlers.test.ts` "each operation runs once, at most two at once, under any order of handler ends and a
-  late batch", with `handlerRaceProperty` in `test/handler-properties.ts`.
+## 1b The expanded net
 
-The simulation gate shows that `handlerFaultProperty` fails on four planted defects: a handler runs before its
-commit lands (`fixtures/simulation/early-start-runtime.ts`), tasks come in a second commit
-(`fixtures/simulation/late-task-runtime.ts`), a result has another request id
-(`fixtures/simulation/timed-result-runtime.ts`), and a throw ends the task faulted
-(`fixtures/simulation/uncaught-throw-runtime.ts`).
+`withHandlers(net, transitions)` is a pure expansion. Each transition `t` becomes:
 
-## 3 Failures
+- A start `t` with the original variables, guard, input arcs, and declared join keys. Its output stores the binding on `t:busy`.
+- A place `t:result` for `{ binding, variant, value }`.
+- An end `t:v` for each declared variant `v`. It consumes the matching busy binding and result, then produces the variant's outputs.
 
-- A handler throws, the operation's transition has no handler, or the result's commit throws: the task reports
-  the error and runs again after `retryDelayMs`. A [broken net instance](broken-instances.md) ends it as faulted.
-  Tests: `test/handlers.test.ts` "a handler's throw is reported, and the operation stays in flight and runs again
-  after retryDelayMs", "a task whose transition has no handler, as after the host dropped it, is reported and runs
-  again after retryDelayMs".
-- A result for no started operation, or one that does not fit the transition, is a bug, also when the log holds
-  a result for the operation. Its commit throws.
-  Test: `test/handlers.test.ts` "refuses a result for no started operation, or one the transition does not
-  declare, which is a bug".
-- A host batch whose request id starts with `result:`, or that has tokens on a busy or result place, is a bug in
-  the host: the enqueue rejects and commits nothing.
-  Test: `test/handlers.test.ts` "refuses a host batch that uses a result request id or fills a place the runtime
-  owns, and commits nothing".
-- A handler transition whose parts clash with the net, such as a place named `t:busy`, is a net problem.
-  Test: `test/handlers.test.ts` "refuses a handler transition whose parts clash with the net, and names every
-  problem".
-- An end's arc that gets a token outside its places is a bug in the runtime, so it throws.
-  Test: `test/handlers.test.ts` "an end's arcs throw on a token outside their places, which is a bug in the
-  runtime".
+End transitions join busy bindings to results. Their occurrence bindings remain `{busy, result}`.
+The pure engine remains the replay oracle.
+Tests: `test/handlers.test.ts`
+"makes a handler transition a start transition, a busy place, a result place and an end per variant",
+"the busy place holds only bindings of the transition, and the result place only declared results",
+"an end fires only for a result of its own variant and its own run",
+"handler joins preserve matching results and busy arrival order",
+"one handler result checks only its matching run, regardless of the number of busy runs".
 
-## 4 What a handler must do
+## 1c Atomic boundaries
 
-- Expect to run more than once for one operation: after a crash, a throw, or a result that did not commit. Give
-  `operationId` to the outside service, so a second run finds what the first did. The id is unique in one
-  net instance: a host adds the net and the conversation.
-- Return an expected failure as a variant, and throw only for a bug or an outage. Stop when `signal` aborts.
+- Allocation consumes inputs, appends start occurrences, charges the start budget, and creates coordinators together.
+- Launch creates one owned worker, records its launch receipt, and stores an `allSettled` wait together.
+- Native task phases perform the work. `completing` does not release tokens: ordinary owned children must end first.
+- Settlement validates the terminal result, admits `result:<operation id>`, fires internal ends, and allocates permitted downstream starts.
+  The coordinator ends in that transaction.
 
-## 5 Limits
+An operation id is `transition/<start occurrence log index>`. It is unique within one instance, not across conversations.
+External services need this id together with the instance identity for idempotency or fencing.
+Task invocation can repeat after a crash. A retained terminal execution is not rerun merely because settlement failed.
 
-- Handlers run in the process of the Harness.
-- A resource token keeps work exclusive only inside the net. If a process dies while its handler's work goes on,
-  the next run of the operation can overlap it: two holders are inside at once. See section 5 of
-  [examples/classics/README.md](../../../examples/classics/README.md).
-- A handler has no timeout. A wait inside a handler does not survive a crash; a delayed result does.
-- Without `aborted`, an aborted operation holds its tokens until an operator supplies a result through [`resolve`](broken-instances.md).
-- Durable parks a task that a crash cuts off `restartLimit` times in a row (default 5). Its operation stays in
-  flight until the host calls `Harness.retryTask`.
-- A throw that comes back each time, such as a result that does not fit, makes the task run again with no limit.
-- `inFlight` and `abort` read the whole log, so their cost grows with it.
+Terminal task records discard checkpoints. A conversation-scoped `petrus.native-launch` document retains each
+coordinator's worker reference. Allocation creates an initialized empty receipt; launch fills it atomically.
+Recovery checks the retained task's owner, conversation, and input. A missing receipt or inconsistent worker is an error.
+
+Tests: `test/coordination.test.ts`
+"allocation creates one coordinator, launch creates one owned execution, and resolve refuses live coordination",
+"crashes around allocation, launch, termination and settlement preserve one result and one worker".
+The classical test `examples/classics/test/mutual-exclusion.test.ts`
+"holds the mutex through native completion and both owned children, under generated completion orders and crashes"
+checks held resources and expanded-net replay with two owned children.
+
+## 1d Settlement and limits
+
+Internal ends settle before policy-selected starts. A paused start budget cannot prevent existing operations from
+settling. Result validation also runs for duplicates. The first recorded result wins.
+Host requests cannot use `result:` or `start-limit:` prefixes or fill internal busy and result places.
+
+See [spec.md](spec.md) for the durable start budget, [aborts.md](aborts.md) for cancellation,
+[delays.md](delays.md) for native sleeps, and [broken-instances.md](broken-instances.md) for operator resolution.
+
+A resource token prevents overlapping operations within the net. It cannot stop an external effect that survives
+a dead process. Such a resource needs its own lease or fence. The start budget does not bound native child creation,
+explicit retries, or external spending.

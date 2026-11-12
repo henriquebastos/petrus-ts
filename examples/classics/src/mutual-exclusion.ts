@@ -1,6 +1,11 @@
+import { defineTask } from "@earendil-works/pi-durable";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
-import type { Handler, HandlerTransition } from "@petrus/runtime";
+import type { Execution, ExecutionInput, HandlerResult, HandlerTransition } from "@petrus/runtime";
+import { execution } from "@petrus/runtime";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { abortNative, completeNative } from "./native-outcome.ts";
 
 /**
  * Processes that each use a shared resource once, one at a time. The one token on `mutex` is the resource token:
@@ -48,13 +53,19 @@ export function initialMarking(processCount: number): Marking {
 /** The shared resource outside the net. The operation id names the holder, so a second run of one operation is the same holder. */
 export type Resource = { readonly use: (process: Token, operationId: string) => Promise<void> };
 
-export function mutualExclusionHandlers(resource: Resource): readonly Handler[] {
-	const section: Handler<"process" | "lock"> = {
-		transition: critical,
-		run: async (binding, { operationId }) => {
-			await resource.use(binding.process, operationId);
-			return { variant: "left", value: binding.process };
+export function mutualExclusionHandlers(resource: Resource): readonly Execution[] {
+	const section = defineTask<ExecutionInput, { readonly phase: "use" }, HandlerResult>({
+		name: "classics:critical",
+		version: 1,
+		initial: () => ({ phase: "use" }),
+		phases: {
+			use: async ({ input }, runtime, context) => {
+				const { process } = Value.Parse(Type.Object({ process: Type.String() }), input.binding);
+				await resource.use(process, input.id);
+				await completeNative(runtime, context, { variant: "left", value: process });
+			},
 		},
-	};
-	return [section];
+		abort: abortNative,
+	});
+	return [execution(critical, section)];
 }

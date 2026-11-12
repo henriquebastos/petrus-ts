@@ -17,6 +17,7 @@ import { firstBatch, plainJobsNet, queue, work } from "./handler-properties.ts";
 
 const parts: NetInstanceParts = {
 	name: "jobs",
+	startLimit: 10_000,
 	cache: createNetInstanceCache(randomUUID()),
 	net: plainJobsNet,
 	policy: definitionOrder,

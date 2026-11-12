@@ -1,6 +1,11 @@
+import { defineTask } from "@earendil-works/pi-durable";
 import type { ColourSet, Marking, Net, Place, Token, Transition } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
-import type { Handler, HandlerTransition, Signal } from "@petrus/runtime";
+import type { Execution, ExecutionInput, HandlerResult, HandlerTransition, Signal } from "@petrus/runtime";
+import { execution } from "@petrus/runtime";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { abortNative, completeNative } from "./native-outcome.ts";
 
 /** The two fields of a pair token, or none when the token is not a pair. */
 function fields(token: Token): readonly unknown[] {
@@ -145,30 +150,46 @@ export type Shop = {
 	readonly undo: (order: Token, operationId: string) => Promise<void>;
 };
 
-export function orderProcessHandlers(shop: Shop): readonly Handler[] {
-	const reserving: Handler<"c"> = {
-		transition: checkStock,
-		run: async ({ c }, { operationId, signal }) => ({
-			variant: (await shop.reserve(c, operationId, signal)) ? "reserved" : "missing",
-			value: c,
-		}),
-	};
-	const charging: Handler<"c"> = {
-		transition: charge,
-		run: async ({ c }, { operationId, signal }) => ({
-			variant: (await shop.charge(c, operationId, signal)) ? "charged" : "declined",
-			value: c,
-		}),
-	};
-	const undoing: Handler<"s" | "b"> = {
-		transition: undo,
-		run: async ({ s }, { operationId }) => {
-			const c = orderOf(s) ?? null;
-			await shop.undo(c, operationId);
-			return { variant: "undone", value: c };
+export function orderProcessHandlers(shop: Shop): readonly Execution[] {
+	const undoing = defineTask<ExecutionInput, { readonly phase: "undo" }, HandlerResult>({
+		name: "classics:Undo",
+		version: 1,
+		initial: () => ({ phase: "undo" }),
+		phases: {
+			undo: async ({ input }, runtime, context) => {
+				const {
+					s: [value],
+				} = Value.Parse(Type.Object({ s: Type.Tuple([Type.String(), Type.Boolean()]) }), input.binding);
+				await shop.undo(value, input.id);
+				await completeNative(runtime, context, { variant: "undone", value });
+			},
 		},
-	};
-	return [reserving, charging, undoing];
+		abort: abortNative,
+	});
+	return [
+		sideExecution(checkStock, shop.reserve, "reserved", "missing"),
+		sideExecution(charge, shop.charge, "charged", "declined"),
+		execution(undo, undoing),
+	];
+}
+
+function sideExecution(transition: HandlerTransition, work: Shop["reserve"], ok: string, failed: string): Execution {
+	const task = defineTask<ExecutionInput, { readonly phase: "work" }, HandlerResult>({
+		name: `classics:${transition.id}`,
+		version: 1,
+		initial: () => ({ phase: "work" }),
+		phases: {
+			work: async ({ input }, runtime, context) => {
+				const { c: value } = Value.Parse(Type.Object({ c: Type.String() }), input.binding);
+				const variant = (await work(value, input.id, runtime.signal)) ? ok : failed;
+				await completeNative(runtime, context, { variant, value });
+			},
+		},
+		abort: async (_task, runtime, context) => {
+			await completeNative(runtime, context, { variant: "aborted", value: null });
+		},
+	});
+	return execution(transition, task);
 }
 
 /** The handler transitions that the host may abort: the two sides of an order. */

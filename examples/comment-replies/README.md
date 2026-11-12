@@ -1,7 +1,7 @@
 # Example: comment replies
 
 A small host app on Petrus, and a reference for agents that build one. It reads GitHub webhook deliveries, turns
-each into a batch of tokens, and enqueues it; the commit of the batch steps the net until nothing fires. It owes
+each into a batch of tokens, and enqueues it. Native tasks produce replies after admission. It owes
 one reply to each new comment on an opened pull request. It posts nothing: the replies stay as tokens, so the
 example needs no GitHub access and no token.
 
@@ -24,7 +24,7 @@ after the fix, and the request ids make the repeated deliveries safe.
 - `src/host.ts`: `handleDelivery` enqueues the batch into a net instance and returns what its commit fired.
 - `src/main.ts`: the composition root. It is the only file that reads the system clock and the arguments. It opens
   Durable's JSONL storage in the state directory, installs the runtime's extension in a registry, opens a Harness
-  with the same clock, takes the net instance in the root conversation, handles each delivery, prints the marking
+  with the same clock, takes the net instance in the root conversation, handles and settles each delivery, prints the marking
   and closes the Harness.
 
 ## 2 Choosing the request id
@@ -48,9 +48,9 @@ two arrivals of one fact must get one id, and two facts must never share one.
 
 ## 3 What the example shows
 
-- A resource token admits one binding element per step. Two comments on one pull request are answered in two
-  steps of one commit: allocation gives the token to the first comment, and the token that `answer` gives back is
-  new in that step. Test: `test/host.test.ts` "answers one comment per pull request per step, because the resource token is held for the step".
+- A resource token reserves one comment while its native task runs. Enqueue returns before the reply exists.
+  Settlement publishes the reply and releases the resource for the next comment in a later commit.
+  Test: `test/host.test.ts` "holds the resource while a reply is pending and answers the next comment after settlement".
 - The edge ignores what it does not read: a comment on an issue, another event, a payload that does not match.
   Test: `test/host.test.ts` "ignores a comment on an issue, another event, and a payload that does not match".
 - A new Harness over the same state directory, as in the next run of the command, reads what the last commit
@@ -63,8 +63,9 @@ two arrivals of one fact must get one id, and two facts must never share one.
 ## 4 Limits
 
 - A comment on a pull request whose `opened` delivery never came waits: nothing gives that pull request a token.
-- A commit steps until a step fires nothing, at most 1,000 steps. This net always stops; a net that can cycle makes
-  the enqueue throw and commits nothing.
+- The example uses a durable ceiling of 10,000 authored starts. Reopen does not reset it.
+  A host must inspect and explicitly raise the ceiling when more work is intended.
+- Existing old-model state directories are not migrated. Use a fresh directory for native execution.
 - One process at a time may use the state directory.
 - `src/main.ts` opens the storage with `fsync` on: Durable flushes a commit's files to the disk before it appends
   the commit's marker, so after a power loss the state holds whole commits only. Durable does not flush the marker

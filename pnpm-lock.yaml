@@ -207,6 +207,9 @@ importers:
       '@petrus/petri-net':
         specifier: workspace:*
         version: link:../petri-net
+      typebox:
+        specifier: 1.3.27
+        version: 1.3.27
     devDependencies:
       '@earendil-works/chord':
         specifier: 1.4.0

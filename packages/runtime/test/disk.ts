@@ -68,8 +68,11 @@ export type Disk = {
 	readonly reports: () => readonly unknown[];
 };
 
-export function createDisk(extensions: readonly Extension[], clock: TestClock = createClock()): Disk {
-	const memory = new MemoryStorage();
+export function createDisk(
+	extensions: readonly Extension[],
+	clock: TestClock = createClock(),
+	memory: MemoryStorage = new MemoryStorage(),
+): Disk {
 	const history: NetInstanceState[] = [];
 	const reports: unknown[] = [];
 	const instances = new Set<DocumentId>();

@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import fc from "fast-check";
 import type { Marking, Token } from "@petrus/petri-net";
-import { definitionOrder, tokensAt } from "@petrus/petri-net";
+import { definitionOrder, placeId, tokensAt } from "@petrus/petri-net";
 import type { NetInstance, Runtime, Signal } from "@petrus/runtime";
 import { createRuntime } from "@petrus/runtime";
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import type { Shop } from "../src/order-process.ts";
 import { abortable, done, initialMarking, orderProcess, orderProcessHandlers } from "../src/order-process.ts";
 import { clock, context, createDisk, runToEnd } from "./disk.ts";
@@ -68,8 +68,8 @@ function runtimeOf(shop: Shop): Runtime {
 		net: orderProcess,
 		policy: definitionOrder,
 		clock,
-		handlers: orderProcessHandlers(shop),
-		retryDelayMs: 0,
+		executions: orderProcessHandlers(shop),
+		startLimit: 100,
 	});
 }
 
@@ -138,18 +138,70 @@ function cancelling(cancelled: readonly string[], scheduler: fc.Scheduler): (ins
 		await Promise.all(
 			cancelled.map(async (c) => {
 				await scheduler.schedule(Promise.resolve(), `cancel ${c}`);
+				while (
+					(await instance.inFlight(context)).some(
+						(operation) => operation.transition === "Split" && operation.binding.c === c,
+					)
+				) {
+					await flush();
+				}
 				const sides = (await instance.inFlight(context)).filter(
 					(operation) => abortable.has(operation.transition) && operation.binding.c === c,
 				);
-				await Promise.all(sides.map((operation) => instance.abort(operation.id, context)));
+				await Promise.all(sides.map((operation) => cancelSide(instance, operation.id)));
 			}),
 		);
 	};
 }
 
+async function cancelSide(instance: NetInstance, id: string): Promise<void> {
+	while ((await instance.abort(id, context)) !== "terminal") await flush();
+	if ((await instance.inFlight(context)).some((operation) => operation.id === id)) {
+		await instance.resolve(id, { variant: "aborted", value: null }, context);
+	}
+}
+
 const now = (): Promise<void> => Promise.resolve();
 
 describe("order process", () => {
+	test("pre-launch cancellation holds the side tokens without a result until the operator resolves it", async () => {
+		const disk = createDisk();
+		const shop = fakeShop([], [], now);
+		const runtime = createRuntime({
+			name: "unlaunched-sides",
+			nonce: randomUUID(),
+			net: { ...orderProcess, transitions: [] },
+			policy: definitionOrder,
+			clock,
+			executions: orderProcessHandlers(shop),
+			startLimit: 3,
+		});
+		const process = await disk.open(runtime);
+		onTestFinished(() => process.close());
+		await process.instance.enqueue(
+			{
+				requestId: "sides",
+				tokens: {
+					[placeId("ToCheck")]: ["o1"],
+					[placeId("ToCharge")]: ["o1"],
+				},
+			},
+			context,
+		);
+		const sides = await process.instance.inFlight(context);
+		expect(sides).toHaveLength(2);
+		for (const side of sides) expect(await process.instance.abort(side.id, context)).toBe("marked");
+		await process.settle();
+		expect(await process.instance.inFlight(context)).toStrictEqual(sides);
+		const held = await process.instance.state(context);
+		expect(held.log.filter((entry) => entry.kind === "ingress")).toHaveLength(1);
+		expect([...shop.reservations(), ...shop.payments()]).toStrictEqual([]);
+		for (const side of sides) await process.instance.resolve(side.id, { variant: "aborted", value: null }, context);
+		await process.settle();
+		expect(tokensAt(disk.last(), done.id)).toStrictEqual([["o1", "cancelled"]]);
+		expect(completedProperly(disk.last(), ["o1"])).toBe(true);
+	});
+
 	test("ships an order that the shop can serve, and cancels and undoes one whose payment it declines", async () => {
 		const disk = createDisk();
 		const shop = fakeShop([], ["o2"], now);
@@ -176,7 +228,7 @@ describe("order process", () => {
 				await flush();
 			}
 			const sides = (await instance.inFlight(context)).filter((operation) => abortable.has(operation.transition));
-			await Promise.all(sides.map((operation) => instance.abort(operation.id, context)));
+			await Promise.all(sides.map((operation) => cancelSide(instance, operation.id)));
 		};
 		await runToEnd(disk, runtimeOf(shop), initialMarking(["o1"]), undefined, undefined, cancelAfterWork);
 		expect(tokensAt(disk.last(), done.id)).toStrictEqual([["o1", "cancelled"]]);

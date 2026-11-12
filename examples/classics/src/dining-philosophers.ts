@@ -1,6 +1,11 @@
+import { defineTask } from "@earendil-works/pi-durable";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
-import type { Handler, HandlerTransition } from "@petrus/runtime";
+import type { Execution, ExecutionInput, HandlerResult, HandlerTransition } from "@petrus/runtime";
+import { execution } from "@petrus/runtime";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { abortNative, completeNative } from "./native-outcome.ts";
 
 /**
  * Philosophers round a table with one fork between each two plates. Philosopher k eats with fork k on the left and
@@ -72,13 +77,19 @@ export function initialMarking(size: number, meals: readonly Token[]): Marking {
 /** The table outside the net. The operation id names the meal, so a second run of one operation is the same meal. */
 export type Table = { readonly eat: (philosopher: Token, operationId: string) => Promise<void> };
 
-export function diningPhilosophersHandlers(size: number, table: Table): readonly Handler[] {
-	const meal: Handler<"philosopher"> = {
-		transition: eat(size),
-		run: async (binding, { operationId }) => {
-			await table.eat(binding.philosopher, operationId);
-			return { variant: "ate", value: binding.philosopher };
+export function diningPhilosophersHandlers(size: number, table: Table): readonly Execution[] {
+	const meal = defineTask<ExecutionInput, { readonly phase: "eat" }, HandlerResult>({
+		name: "classics:eat",
+		version: 1,
+		initial: () => ({ phase: "eat" }),
+		phases: {
+			eat: async ({ input }, runtime, context) => {
+				const { philosopher: value } = Value.Parse(Type.Object({ philosopher: Type.String() }), input.binding);
+				await table.eat(value, input.id);
+				await completeNative(runtime, context, { variant: "ate", value });
+			},
 		},
-	};
-	return [meal];
+		abort: abortNative,
+	});
+	return [execution(eat(size), meal)];
 }

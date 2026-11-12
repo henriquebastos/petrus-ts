@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
+import { defineTask } from "@earendil-works/pi-durable";
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, placeId, tokenKey, transitionId } from "@petrus/petri-net";
 import type {
 	Batch,
-	Handler,
+	Execution,
+	ExecutionInput,
 	HandlerResult,
 	HandlerTransition,
 	NetInstanceState,
 	RuntimeOptions,
 } from "../src/index.ts";
-import { withHandlers } from "../src/index.ts";
+import { execution, withHandlers } from "../src/index.ts";
 import { startedOperations } from "../src/operations.ts";
 import type { Disk, TestClock } from "./disk.ts";
 import { context, createClock, createDisk, enqueueAndSettle, inProcess } from "./disk.ts";
@@ -85,8 +87,8 @@ export function jobsOptions(service: Service, clock: TestClock): RuntimeOptions 
 		net: jobsNet,
 		policy: definitionOrder,
 		clock,
-		handlers: [service.handler],
-		retryDelayMs: 10,
+		executions: [service.execution],
+		startLimit: 100,
 	};
 }
 
@@ -97,7 +99,7 @@ class Outage extends Error {
 
 /** The service outside the net, as the test sees it. */
 export type Service = {
-	readonly handler: Handler;
+	readonly execution: Execution;
 	/** How often the handler ran for each operation. */
 	readonly calls: () => ReadonlyMap<string, number>;
 	/** The job of each operation that the service did, by operation id. It does each one once (lookup-first). */
@@ -124,22 +126,40 @@ export function createService(
 	let running = 0;
 	let mostAtOnce = 0;
 	let outage = true;
-	const handler: Handler<"j" | "s"> = {
-		transition: work,
-		run: async (binding, { operationId }) => {
-			const committed = startedOperations(new Set([work.id]), lastState(history()).log);
-			if (!committed.some(({ id, binding: b }) => id === operationId && tokenKey(b) === tokenKey(binding))) {
-				early.push(operationId);
-			}
-			const count = (calls.get(operationId) ?? 0) + 1;
-			calls.set(operationId, count);
-			running += 1;
-			mostAtOnce = Math.max(mostAtOnce, running);
-			await pause();
-			running -= 1;
-			return answer(binding.j, operationId, count);
-		},
+	const run = async ({ binding, id: operationId }: ExecutionInput): Promise<HandlerResult> => {
+		const committed = startedOperations(new Set([work.id]), lastState(history()).log);
+		if (!committed.some(({ id, binding: b }) => id === operationId && tokenKey(b) === tokenKey(binding))) {
+			early.push(operationId);
+		}
+		const count = (calls.get(operationId) ?? 0) + 1;
+		calls.set(operationId, count);
+		running += 1;
+		mostAtOnce = Math.max(mostAtOnce, running);
+		await pause();
+		running -= 1;
+		return answer(binding.j ?? null, operationId, count);
 	};
+	const native = defineTask<ExecutionInput, { readonly phase: "run" }, HandlerResult>({
+		name: `jobs-test:${randomUUID()}`,
+		version: 1,
+		initial: () => ({ phase: "run" }),
+		phases: {
+			run: async ({ input }, runtime, context) => {
+				let result: HandlerResult;
+				try {
+					result = await run(input);
+				} catch (error) {
+					if (!(error instanceof Outage)) throw error;
+					await runtime.sleepUntil(runtime.now() + 10, { phase: "run" }, context);
+					return;
+				}
+				await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result } }), context);
+			},
+		},
+		abort: async (_task, runtime, context) => {
+			await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context);
+		},
+	});
 	/** The service's answer: the outage once for j2, a refusal for j3, else the receipt of the operation's first run. */
 	function answer(j: Token, operationId: string, count: number): HandlerResult {
 		if (j === "j2" && outage) {
@@ -155,7 +175,7 @@ export function createService(
 		return { variant: "done", value: first };
 	}
 	return {
-		handler,
+		execution: execution(work, native),
 		calls: () => calls,
 		effects: () => effects,
 		early: () => early,
@@ -191,10 +211,15 @@ function sortedMarking(marking: Marking): string {
  * service did nothing for an operation that the log does not hold; and no handler ran before its occurrence was
  * committed.
  */
-function handlersHeld(history: readonly NetInstanceState[], service: Service, jobs: readonly string[]): boolean {
+function handlersHeld(
+	net: Net,
+	history: readonly NetInstanceState[],
+	service: Service,
+	jobs: readonly string[],
+): boolean {
 	const final = lastState(history);
 	return (
-		everyCommitHeld(plainJobsNet, definitionOrder, history) &&
+		everyCommitHeld(net, definitionOrder, history) &&
 		sortedMarking(final.marking) === expectedMarking(jobs) &&
 		operationsHeld(final, service, jobs.length)
 	);
@@ -225,30 +250,24 @@ const jobsArbitrary: fc.Arbitrary<readonly string[]> = fc.shuffledSubarray(["j1"
  * Then every handler property holds (see `handlersHeld`): work in flight at the crash runs again and ends once.
  */
 export function handlerFaultProperty(factory: RuntimeFactory): fc.IAsyncProperty<[readonly string[], Fault]> {
-	return fc.asyncProperty(jobsArbitrary, faultArbitrary(16), async (jobs, fault) => {
+	return fc.asyncProperty(jobsArbitrary, faultArbitrary(64), async (jobs, fault) => {
 		const clock = createClock();
 		const service = createService(() => disk.history());
 		const runtime = factory(jobsOptions(service, clock));
 		const disk: Disk = createDisk([runtime.extension], clock);
 		await enqueueAndSettle(disk, { [fault.kind]: fault.commit }, runtime, firstBatch(jobs));
-		return handlersHeld(disk.history(), service, jobs);
+		return handlersHeld(runtime.net, disk.history(), service, jobs);
 	});
 }
 
 /** The race property's checks, after the last settle. */
-function raceHeld(disk: Disk, service: Service, jobs: readonly string[]): boolean {
+function raceHeld(net: Net, disk: Disk, service: Service, jobs: readonly string[]): boolean {
 	return (
-		handlersHeld(disk.history(), service, [...jobs, "j4"]) &&
-		outageReportedOnce(jobs, disk.reports()) &&
+		handlersHeld(net, disk.history(), service, [...jobs, "j4"]) &&
+		disk.reports().length === 0 &&
 		ranOnceEach(lastState(disk.history()), service) &&
 		service.mostAtOnce() <= 2
 	);
-}
-
-/** The Harness reported one failed run, the outage, when job j2 ran; nothing otherwise. */
-function outageReportedOnce(jobs: readonly string[], reports: readonly unknown[]): boolean {
-	const expected = jobs.includes("j2") ? 1 : 0;
-	return reports.length === expected && reports.every((report) => report instanceof Outage);
 }
 
 /** Each operation's handler ran once, and the operation of job j2 twice: the outage, then the run that ended it. */
@@ -259,7 +278,7 @@ function ranOnceEach(final: NetInstanceState, service: Service): boolean {
 
 /**
  * The scheduler ends each handler run, and the host sends a late batch of one more job at a time the scheduler
- * chooses, while handlers run. The outage is reported once, and the operation runs again after the retry delay.
+ * chooses, while workers run. The native task catches the outage and retries after its explicit Durable sleep.
  * After a last settle every handler property holds (see `handlersHeld`), each operation's handler ran once (twice
  * for the outage), and the two slots kept at most two handlers running at once.
  */
@@ -282,7 +301,7 @@ export function handlerRaceProperty(factory: RuntimeFactory): fc.IAsyncProperty<
 				await scheduler.waitFor(Promise.all([settle(), late]));
 				await scheduler.waitFor(settle());
 			});
-			return outcome === "done" && raceHeld(disk, service, jobs);
+			return outcome === "done" && raceHeld(runtime.net, disk, service, jobs);
 		},
 	);
 }

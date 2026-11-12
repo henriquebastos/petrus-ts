@@ -2,11 +2,11 @@ import type { ConversationId, Tx } from "@earendil-works/pi-durable";
 import type { IndexedMarking, Net, SelectionPolicy, TransitionId } from "@petrus/petri-net";
 import { clearJournalIndexed, markingProblems } from "@petrus/petri-net";
 import type { Admitted } from "./admit.ts";
-import { advanceUntilQuiet } from "./advance.ts";
+import { advanceOperations } from "./advance.ts";
 import type { NetInstanceCache } from "./net-instance-cache.ts";
 import type { NetInstanceRecord } from "./net-instance-record.ts";
 import { netInstanceRecord, readNetInstance, readNetInstanceView, writeNetInstance } from "./net-instance-record.ts";
-import type { Ingress, LogEntry, NetInstanceState, Occurrence } from "./net-instance.ts";
+import type { Ingress, LogEntry, NetInstanceState, Occurrence, StartBudget } from "./net-instance.ts";
 import { BrokenNetInstance } from "./net-instance.ts";
 import type { NetInstanceView } from "./net-instance-view.ts";
 import type { Operation } from "./operations.ts";
@@ -26,6 +26,7 @@ export type StartOperation = (
 /** What a commit of a net instance needs: the net's name, the plain net, its policy and handler transitions. */
 export type NetInstanceParts = {
 	readonly name: string;
+	readonly startLimit: number;
 	readonly net: Net;
 	readonly policy: SelectionPolicy;
 	readonly handlerIds: ReadonlySet<TransitionId>;
@@ -48,6 +49,7 @@ type Planned =
 			readonly indexed: IndexedMarking;
 			readonly appended: readonly LogEntry[];
 			readonly started: readonly Operation[];
+			readonly budget: StartBudget;
 	  };
 
 /**
@@ -55,11 +57,23 @@ type Planned =
  * change's ingress, then the occurrences), and the operations that those steps started. A repeated change plans
  * nothing.
  */
-export function plan(parts: NetInstanceParts, view: NetInstanceView, admitted: Admitted, at: number): Planned {
+export function plan(
+	parts: NetInstanceParts,
+	view: NetInstanceView,
+	admitted: Admitted,
+	at: number,
+	budget: StartBudget | null = null,
+): Planned {
 	if (admitted.kind === "repeated") {
 		return admitted;
 	}
-	const stepped = advanceUntilQuiet(parts.policy, admitted.indexed, at);
+	const stepped = advanceOperations(
+		parts.policy,
+		admitted.indexed,
+		at,
+		parts.handlerIds,
+		budget ?? { ceiling: parts.startLimit, used: 0, paused: false },
+	);
 	const appended = [admitted.ingress, ...stepped.fired];
 	const started = operationsStartedFrom(parts.handlerIds, appended, view.logLength);
 	return {
@@ -69,6 +83,7 @@ export function plan(parts: NetInstanceParts, view: NetInstanceView, admitted: A
 		indexed: stepped.indexed,
 		appended,
 		started,
+		budget: stepped.budget,
 	};
 }
 
@@ -111,8 +126,9 @@ export function commitToRecord(
 	const stored = readNetInstanceView(draft);
 	const indexed = draft.stamp !== "" && cached?.stamp === draft.stamp ? cached.indexed : stored.indexed(parts.net);
 	const view = { ...stored, indexed: () => indexed };
-	const planned = plan(parts, view, change(view), at);
+	const planned = plan(parts, view, change(view), at, draft.budget);
 	if (planned.kind === "applied") {
+		draft.budget = planned.budget;
 		writeNetInstance(draft, parts.name, planned.indexed.journal, planned.appended);
 		const committed = clearJournalIndexed(planned.indexed);
 		draft.stamp = parts.cache.nextStamp();
@@ -139,6 +155,9 @@ export function checkedState(parts: NetInstanceParts, stored: Readonly<NetInstan
 }
 
 function checkName(parts: NetInstanceParts, stored: Readonly<NetInstanceRecord>): void {
+	if (stored.model !== "native-v1") {
+		throw new BrokenNetInstance("the instance uses another execution model; create a fresh native-task instance");
+	}
 	if (stored.net !== "" && stored.net !== parts.name) {
 		throw new BrokenNetInstance(`the conversation holds an instance of the net ${stored.net}, not ${parts.name}`);
 	}

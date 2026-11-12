@@ -15,7 +15,7 @@ The build runs `../src/main.ts`. The recorder uses the real Petrus TS runtime an
 A local workshop returns `item n` for `order n`. No external service or language model runs.
 The build writes the recording, then bundles the browser app. Rebuild to record changed net code.
 
-`../src/record-run.ts` expands the handlers with `withHandlers`, runs their Durable tasks, and reads
+`../src/record-run.ts` uses the expanded `runtime.net`, runs native executions, and reads
 the committed state. `../../../packages/runtime-replay/src/replay.ts` applies each ingress and calls Petrus `fire` for each occurrence.
 The recorder rejects a replay whose final marking differs from the committed marking.
 The recording includes a SHA-256 digest of the local package sources and classical-net sources.
@@ -40,6 +40,7 @@ Test: `../test/viewer.test.tsx` "navigates both history boundaries and preserves
 ## 1b Replay is not live execution
 
 Each position shows the marking after one log entry. These intermediate markings are not all committed snapshots.
+Enqueue records admission before execution. A busy token remains held through execution and owned children until terminal settlement.
 The log does not retain Jensen step boundaries. Equal timestamps do not identify concurrent steps.
 The clock records logical ticks, not elapsed milliseconds. The browser only reads the recording.
 

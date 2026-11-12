@@ -33,10 +33,11 @@ async function openOver(directory: string): Promise<Opened> {
 
 /** Handles the deliveries in a first process, closes it, and returns the state it committed. */
 async function firstProcess(directory: string): Promise<NetInstanceState> {
-	const { instance, close } = await openOver(directory);
+	const { instance, close, settle } = await openOver(directory);
 	try {
 		await handleDelivery(instance, opened, context);
 		await handleDelivery(instance, comment, context);
+		await settle();
 		return await instance.state(context);
 	} finally {
 		await close();
@@ -44,10 +45,41 @@ async function firstProcess(directory: string): Promise<NetInstanceState> {
 }
 
 describe("a Harness over JSONL storage", () => {
+	test("reopen settles an admitted reply once without resetting its start budget", async () => {
+		const directory = join(mkdtempSync(join(tmpdir(), "comment-replies-")), "state");
+		const first = await openOver(directory);
+		await handleDelivery(first.instance, opened, context);
+		await handleDelivery(first.instance, comment, context);
+		expect(await first.instance.inFlight(context)).toHaveLength(1);
+		const admitted = await first.instance.state(context);
+		await first.close();
+		const second = await openOver(directory);
+		onTestFinished(second.close);
+		expect(await second.instance.state(context)).toStrictEqual(admitted);
+		await handleDelivery(second.instance, comment, context);
+		await second.settle();
+		expect(await second.instance.inFlight(context)).toStrictEqual([]);
+		expect(await second.instance.budget(context)).toStrictEqual({ ceiling: 10_000, used: 1, paused: false });
+		const settled = await second.instance.state(context);
+		expect(
+			settled.log.filter((entry) => entry.kind === "ingress" && entry.requestId.startsWith("result:")),
+		).toHaveLength(1);
+		expect(settled.marking).toStrictEqual({
+			replies: [{ repo: 4001, pr: 7, comment: 501 }],
+			free: [{ repo: 4001, pr: 7 }],
+		});
+	});
+
 	test("a new Harness over the same JSONL directory reads what the last commit wrote", async () => {
 		const directory = join(mkdtempSync(join(tmpdir(), "comment-replies-")), "state");
 		const committed = await firstProcess(directory);
-		expect(committed.log.map((entry) => entry.kind)).toStrictEqual(["ingress", "ingress", "occurrence"]);
+		expect(committed.log.map((entry) => entry.kind)).toStrictEqual([
+			"ingress",
+			"ingress",
+			"occurrence",
+			"ingress",
+			"occurrence",
+		]);
 		const { instance, close } = await openOver(directory);
 		onTestFinished(close);
 		expect(await instance.state(context)).toStrictEqual(committed);

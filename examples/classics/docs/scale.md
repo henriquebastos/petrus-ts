@@ -20,9 +20,9 @@ factor. The log is the runtime's, so its length is exact.
   commits(2N) <= 2 commits(N) + 10, for both nets".
 - The largest storage write grows at most linearly. Test: `test/scale.test.ts` "the largest storage write grows
   at most linearly: largest(2N) <= 2 largest(N) + 1,000 bytes, for both nets".
-- The final log has one entry for the first batch, three for each meal, and for each order eight, or ten when it
-  is cancelled. Test: `test/scale.test.ts` "the final log has 3N + 1 entries for N philosophers, and 8N + 2
-  ceil(N / 3) + 1 for N orders".
+- Every authored firing has a start, result ingress, and end. Pure `Split` and `Ship` now follow that lifecycle too.
+  The final log has one batch entry, three entries per meal, and twelve entries per order.
+  Test: `test/scale.test.ts` "the final log has 3N + 1 entries for N philosophers, and 12N + 1 for N orders".
 - The same formulas hold for generated N from 2 to 30, including all three remainders modulo 3.
   Test: `test/scale.test.ts` "the log-length formulas hold for generated sizes from 2 to 30".
 
@@ -47,13 +47,12 @@ Each net has its own assertion. The indexed engine and runtime cache meet both b
 
 ## State equality
 
-Run `pnpm scale:state` (`scripts/check-scale-state.ts`) from the repository root. It compares the SHA-256 hashes of
-`JSON.stringify(await instance.state(context))` after every net commit at N = 100 and N = 300.
-The hashes preserve place order, token representation, log order and timestamps. They exclude the private record stamp.
-The ordinary timing runs do not capture these hashes or read the state after each commit.
-`test/scale-state-baseline.json` holds the hashes from revision `88e246b25fdde1f485eca0178085af980b36558d`.
-The runs have 101 and 301 philosopher commits, and 235 and 701 order commits.
+Run `pnpm scale:state` (`scripts/check-scale-state.ts`) from the repository root. It replays the expanded runtime net
+at N = 100 and N = 300 and checks each committed marking and log prefix. The observer also checks that its state read
+matches the net-document publication. Intermediate occurrence frames are not separate committed snapshots.
+The command reports native task counts and storage commit counts. Timing runs do not capture states.
 
-The baseline was captured in a detached worktree with unchanged package sources and the same observer in `test/scale.ts`.
-The script's `--record` option requires that revision. Copy the observer and script into that worktree to reproduce it.
-The four runs took about 12 seconds together, so this check stays outside `pnpm feedback`.
+`test/scale-state-baseline.json` holds the hashes from revision `88e246b25fdde1f485eca0178085af980b36558d`.
+Those synchronous runs had 101 and 301 philosopher commits, and 235 and 701 order commits.
+The file remains historical evidence. Native scheduling changes traces, so new hashes do not replace it.
+The script rejects `--record`. This integration makes no latency claim.

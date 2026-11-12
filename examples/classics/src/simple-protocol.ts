@@ -1,6 +1,11 @@
-import type { ColourSet, Marking, Net, Place, Token, Transition } from "@petrus/petri-net";
+import { defineTask } from "@earendil-works/pi-durable";
+import type { Binding, ColourSet, Marking, Net, Place, Token, Transition } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
-import type { Handler, HandlerTransition } from "@petrus/runtime";
+import type { Execution, ExecutionInput, HandlerResult, HandlerTransition } from "@petrus/runtime";
+import { execution } from "@petrus/runtime";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { abortNative, completeNative } from "./native-outcome.ts";
 
 /**
  * A sender sends numbered packets to a receiver over a network that can lose packets and acknowledgements, and
@@ -163,25 +168,51 @@ export function initialMarking(data: readonly string[]): Marking {
 /** The network outside the net. `transmit` is true when it delivers. */
 export type Network = { readonly transmit: (message: Token, operationId: string) => Promise<boolean> };
 
+const packetBinding = Type.Object({ packet: Type.Tuple([Type.Integer(), Type.String()]) });
+type TimerState = { readonly phase: "wait" } | { readonly phase: "elapsed"; readonly packet: Token };
+
 /** The handlers of the net: the network's two transmissions, and a timer that waits `waitMs` after each send. */
-export function simpleProtocolHandlers(network: Network, waitMs: number): readonly Handler[] {
-	const packets: Handler<"packet"> = {
-		transition: transmitPacket,
-		run: async ({ packet: moving }, { operationId }) => ({
-			variant: (await network.transmit(moving, operationId)) ? "delivered" : "lost",
-			value: moving,
-		}),
-	};
-	const acks: Handler<"ack"> = {
-		transition: transmitAck,
-		run: async ({ ack }, { operationId }) => ({
-			variant: (await network.transmit(ack, operationId)) ? "delivered" : "lost",
-			value: ack,
-		}),
-	};
-	const timeout: Handler<"packet"> = {
-		transition: wait,
-		run: ({ packet: waited }) => Promise.resolve({ delayMs: waitMs, result: { variant: "elapsed", value: waited } }),
-	};
-	return [packets, acks, timeout];
+export function simpleProtocolHandlers(network: Network, waitMs: number): readonly Execution[] {
+	if (!Number.isFinite(waitMs) || waitMs < 0) throw new RangeError("waitMs must be finite and nonnegative");
+	const timeout = defineTask<ExecutionInput, TimerState, HandlerResult>({
+		name: "classics:protocol-wait",
+		version: 1,
+		initial: () => ({ phase: "wait" }),
+		phases: {
+			wait: async ({ input }, runtime, context) => {
+				const { packet } = Value.Parse(packetBinding, input.binding);
+				await runtime.sleepUntil(input.startedAt + waitMs, { phase: "elapsed", packet }, context);
+			},
+			elapsed: async ({ state }, runtime, context) => {
+				await completeNative(runtime, context, { variant: "elapsed", value: state.checkpoint.packet });
+			},
+		},
+		abort: abortNative,
+	});
+	return [
+		transmission(transmitPacket, (binding) => Value.Parse(packetBinding, binding).packet, network),
+		transmission(transmitAck, (binding) => Value.Parse(Type.Object({ ack: Type.Integer() }), binding).ack, network),
+		execution(wait, timeout),
+	];
+}
+
+function transmission(
+	transition: HandlerTransition,
+	message: (binding: Binding) => Token,
+	network: Network,
+): Execution {
+	const task = defineTask<ExecutionInput, { readonly phase: "transmit" }, HandlerResult>({
+		name: `classics:${transition.id}`,
+		version: 1,
+		initial: () => ({ phase: "transmit" }),
+		phases: {
+			transmit: async ({ input }, runtime, context) => {
+				const value = message(input.binding);
+				const variant = (await network.transmit(value, input.id)) ? "delivered" : "lost";
+				await completeNative(runtime, context, { variant, value });
+			},
+		},
+		abort: abortNative,
+	});
+	return execution(transition, task);
 }

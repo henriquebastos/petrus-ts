@@ -18,9 +18,10 @@ const conversation = ROOT_CONVERSATION_ID;
 function parts(capacity: number): NetInstanceParts {
 	return {
 		name: "contested",
+		startLimit: 10_000,
 		net: contested,
 		policy: definitionOrder,
-		handlerIds: new Set(),
+		handlerIds: new Set(contested.transitions.map((transition) => transition.id)),
 		start: () => Promise.reject(new Error("the plain net starts no operations")),
 		cache: createNetInstanceCache("cache-test", capacity),
 	};
@@ -100,9 +101,11 @@ test("a transaction aborted after the journal write cannot reuse the uncommitted
 	const batch = { requestId: "batch", tokens: { [ready.id]: ["j1"] } };
 	await expect(instance.enqueue(batch, context)).rejects.toThrow("abort after write");
 	expect(await instance.state(context)).toStrictEqual({ marking: {}, log: [] });
+	expect((await instance.budget(context)).used).toBe(0);
 	await instance.enqueue(batch, context);
 	const state = await instance.state(context);
-	expect(state.marking).toStrictEqual({ [left.id]: ["j1"] });
+	expect(state.marking).toStrictEqual({ "take-left:busy": [{ j: "j1" }] });
+	expect((await instance.budget(context)).used).toBe(1);
 	expect(state.log).toHaveLength(2);
 	expect(disk.history()).toHaveLength(1);
 });

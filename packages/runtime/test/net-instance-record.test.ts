@@ -153,6 +153,8 @@ describe("the net instance record", () => {
 		const bound = ["b"];
 		const stored: NetInstanceRecord = {
 			net: "contested",
+			model: "native-v1",
+			budget: null,
 			stamp: "",
 			marking: { p: [list] },
 			log: [{ kind: "occurrence", transition: "t", binding: { x: bound }, at: 5 }],
@@ -169,6 +171,8 @@ describe("the net instance record", () => {
 		const first = netInstanceRecord.definition.initial();
 		const second = netInstanceRecord.definition.initial();
 		expect(first.stamp).toBe("");
+		expect(first.model).toBe("native-v1");
+		expect(first.budget).toBeNull();
 		expect(first.ingresses).toStrictEqual(Array.from({ length: 1024 }, () => []));
 		expect(new Set(first.ingresses).size).toBe(1024);
 		writeNetInstance(first, "contested", [], [ingress]);

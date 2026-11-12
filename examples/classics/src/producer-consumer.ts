@@ -1,6 +1,11 @@
+import { defineTask } from "@earendil-works/pi-durable";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { placeId, transitionId } from "@petrus/petri-net";
-import type { Handler, HandlerTransition } from "@petrus/runtime";
+import type { Execution, ExecutionInput, HandlerResult, HandlerTransition } from "@petrus/runtime";
+import { execution } from "@petrus/runtime";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
+import { abortNative, completeNative } from "./native-outcome.ts";
 
 /**
  * A producer and a consumer that share a buffer with room for `capacity` items. Each free slot is a token on
@@ -66,20 +71,32 @@ export type Workshop = {
 	readonly use: (item: Token, operationId: string) => Promise<void>;
 };
 
-export function producerConsumerHandlers(workshop: Workshop): readonly Handler[] {
-	const producer: Handler<"order" | "slot"> = {
-		transition: produce,
-		run: async (binding, { operationId }) => ({
-			variant: "made",
-			value: await workshop.make(binding.order, operationId),
-		}),
-	};
-	const consumer: Handler<"item"> = {
-		transition: consume,
-		run: async (binding, { operationId }) => {
-			await workshop.use(binding.item, operationId);
-			return { variant: "done", value: binding.item };
+export function producerConsumerHandlers(workshop: Workshop): readonly Execution[] {
+	const producer = defineTask<ExecutionInput, { readonly phase: "make" }, HandlerResult>({
+		name: "classics:produce",
+		version: 1,
+		initial: () => ({ phase: "make" }),
+		phases: {
+			make: async ({ input }, runtime, context) => {
+				const binding = Value.Parse(Type.Object({ order: Type.String() }), input.binding);
+				const value = await workshop.make(binding.order, input.id);
+				await completeNative(runtime, context, { variant: "made", value });
+			},
 		},
-	};
-	return [producer, consumer];
+		abort: abortNative,
+	});
+	const consumer = defineTask<ExecutionInput, { readonly phase: "use" }, HandlerResult>({
+		name: "classics:consume",
+		version: 1,
+		initial: () => ({ phase: "use" }),
+		phases: {
+			use: async ({ input }, runtime, context) => {
+				const { item: value } = Value.Parse(Type.Object({ item: Type.String() }), input.binding);
+				await workshop.use(value, input.id);
+				await completeNative(runtime, context, { variant: "done", value });
+			},
+		},
+		abort: abortNative,
+	});
+	return [execution(produce, producer), execution(consume, consumer)];
 }

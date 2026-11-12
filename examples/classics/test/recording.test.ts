@@ -4,8 +4,31 @@ import { placeId, transitionId } from "@petrus/petri-net";
 import { expect, test } from "vitest";
 import { recordProducerConsumer } from "../src/record-producer-consumer.ts";
 import { recordDiningPhilosophers } from "../src/record-dining-philosophers.ts";
+import { recordRun } from "../src/record-run.ts";
+import { initialMarking, orderProcess, orderProcessHandlers } from "../src/order-process.ts";
 import { readRecording, projectNet } from "@petrus/net-view-model";
 import { replay } from "@petrus/runtime-replay";
+
+test("records plain authored transitions through the runtime's expanded start and end net", async () => {
+	const recording = await recordRun(
+		"Order",
+		orderProcess,
+		orderProcessHandlers({
+			reserve: () => Promise.resolve(true),
+			charge: () => Promise.resolve(true),
+			undo: () => Promise.resolve(),
+		}),
+		initialMarking(["o1"]),
+		{ now: () => 0 },
+	);
+	expect(recording.committedMarking).toStrictEqual({ Done: [["o1", "shipped"]] });
+	expect(recording.frames.at(-1)?.marking).toStrictEqual(recording.committedMarking);
+	expect(recording.nodes.map(({ name }) => name)).toEqual(
+		expect.arrayContaining(["Split:busy", "Ship:busy", "Split:done", "Ship:done"]),
+	);
+	expect(recording.frames.filter(({ kind }) => kind === "occurrence")).toHaveLength(8);
+	expect(recording.frames.some((frame) => frame.marking["Split:busy"]?.length === 1)).toBe(true);
+});
 
 test("records dining philosophers through the same replay contract", async () => {
 	let time = 0;

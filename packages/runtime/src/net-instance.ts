@@ -21,6 +21,9 @@ export type LogEntry = Occurrence | Ingress;
 /** The state of one net instance. The marking and the log change in the same commit. */
 export type NetInstanceState = { readonly marking: Marking; readonly log: readonly LogEntry[] };
 
+/** Durable authored-start usage. A refused whole step pauses allocation until the host raises the ceiling. */
+export type StartBudget = { readonly ceiling: number; readonly used: number; readonly paused: boolean };
+
 /**
  * A bug that the runtime finds in a net instance or its net, such as a stored marking that does not fit the net or a
  * net that does not become quiet. A commit with the same input throws it again, so a handler task that meets it ends

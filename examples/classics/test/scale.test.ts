@@ -1,4 +1,5 @@
 import { tokenKey } from "@petrus/petri-net";
+import { replay } from "@petrus/runtime-replay";
 import fc from "fast-check";
 import { expect, test } from "vitest";
 import type { ScaleNet, ScaleRun } from "./scale.ts";
@@ -58,17 +59,15 @@ test("the largest storage write grows at most linearly: largest(2N) <= 2 largest
 });
 
 /**
- * Each meal logs the occurrence of `eat`, its result's ingress and the occurrence of `ate`. Each order logs `Split`,
- * the occurrences of `CheckStock` and `Charge`, their results' ingresses and their variants' occurrences, then
- * `Ship`; a cancelled order, every third, logs the occurrence of `Undo`, its result's ingress and `undone` instead
- * of `Ship`. The first ingress comes before all of them.
+ * Each authored start logs its occurrence, result ingress and end occurrence. A meal has one start. An order
+ * has four: Split, CheckStock, Charge, and either Ship or Undo. Plain transitions use the same lifecycle.
  */
-test("the final log has 3N + 1 entries for N philosophers, and 8N + 2 ceil(N / 3) + 1 for N orders", async () => {
+test("the final log has 3N + 1 entries for N philosophers, and 12N + 1 for N orders", async () => {
 	const philosophers = await atSizeAndDouble("philosophers", (run) => run.logLength);
 	const orders = await atSizeAndDouble("orders", (run) => run.logLength);
 	expect({ philosophers, orders }).toStrictEqual({
 		philosophers: [3 * size + 1, 6 * size + 1],
-		orders: [8 * size + 2 * Math.ceil(size / 3) + 1, 16 * size + 2 * Math.ceil((2 * size) / 3) + 1],
+		orders: [12 * size + 1, 24 * size + 1],
 	});
 });
 
@@ -76,7 +75,7 @@ test("the log-length formulas hold for generated sizes from 2 to 30", async () =
 	await fc.assert(
 		fc.asyncProperty(fc.integer({ min: 2, max: 30 }), async (n) => {
 			expect((await runAtScale("philosophers", n)).logLength).toBe(3 * n + 1);
-			expect((await runAtScale("orders", n)).logLength).toBe(8 * n + 2 * Math.ceil(n / 3) + 1);
+			expect((await runAtScale("orders", n)).logLength).toBe(12 * n + 1);
 		}),
 		{ numRuns: 8, examples: [[2], [3], [4]] },
 	);
@@ -86,12 +85,31 @@ test("the per-commit counters observe guards and token keys for both nets", asyn
 	for (const net of nets) {
 		for (const n of [size, 2 * size]) {
 			const run = await runOnce(net, n);
-			expect(run.work).toHaveLength(net === "philosophers" ? n + 1 : 2 * n + Math.ceil(n / 3) + 1);
+			expect(run.work).toHaveLength(net === "philosophers" ? n + 1 : 4 * n + 1);
 			expect(run.stateHashes).toStrictEqual([]);
 			expect(run.work.slice(1).some((work) => work.guards > 0)).toBe(true);
 			expect(run.work.slice(1).every((work) => work.tokenKeys > 0)).toBe(true);
 		}
 	}
+});
+
+test("each authored start creates one coordinator and one native worker", async () => {
+	for (const net of nets) {
+		for (const n of [size, 2 * size]) {
+			const run = await runOnce(net, n);
+			expect(run.taskCount).toBe(net === "philosophers" ? 2 * n : 8 * n);
+		}
+	}
+});
+
+test.each(nets)("captured states replay on the expanded net without a historical hash comparison: %s", async (net) => {
+	const run = await runAtScale(net, 3, { takeTokenKeys: () => 0, recordStates: true });
+	expect(run.states).toHaveLength(net === "philosophers" ? 4 : 13);
+	expect(run.stateHashes).toHaveLength(run.states.length);
+	for (const state of run.states) {
+		expect(replay(run.net, state.log).at(-1)?.marking).toStrictEqual(state.marking);
+	}
+	expect(run.states.at(-1)).toStrictEqual(run.state);
 });
 
 test("the token-key counter counts calls once and resets after each measurement", () => {

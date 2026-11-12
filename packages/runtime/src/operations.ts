@@ -109,7 +109,7 @@ export function admitResult(
  * The batch that puts an operation's result on its result place, under the request id `result:<operation id>`. A
  * result that does not fit the transition is a bug, so it throws.
  */
-export function checkedResultBatch(net: Net, operation: Operation, result: HandlerResult): Batch {
+function checkedResultBatch(net: Net, operation: Operation, result: HandlerResult): Batch {
 	const batch = {
 		requestId: resultRequestId(operation.id),
 		tokens: { [resultPlaceId(operation.transition)]: [resultToken(operation.binding, result)] },
@@ -124,8 +124,8 @@ export function checkedResultBatch(net: Net, operation: Operation, result: Handl
  */
 export function hostBatchProblems(handlers: ReadonlySet<TransitionId>, batch: Batch): readonly string[] {
 	const owned = new Set([...handlers].flatMap((handler) => [busyPlaceId(handler), resultPlaceId(handler)]));
-	const reserved = batch.requestId.startsWith(resultPrefix)
-		? [`the request id starts with "${resultPrefix}", which the runtime keeps for handler results`]
+	const reserved = [resultPrefix, "start-limit:"].some((prefix) => batch.requestId.startsWith(prefix))
+		? ["the request id uses a prefix reserved for results or start-limit increases"]
 		: [];
 	const places = Object.keys(batch.tokens)
 		.filter((place) => owned.has(placeId(place)))

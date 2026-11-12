@@ -2,7 +2,7 @@ import fc from "fast-check";
 import type { Token } from "@petrus/petri-net";
 import { tokensAt } from "@petrus/petri-net";
 import { describe, expect, onTestFinished, test } from "vitest";
-import type { Handler, NetInstance } from "../src/index.ts";
+import type { Execution, NetInstance } from "../src/index.ts";
 import { createRuntime } from "../src/index.ts";
 import { BrokenNetInstance } from "../src/net-instance.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
@@ -23,7 +23,7 @@ import { lastState } from "./properties.ts";
 type Opened = { readonly disk: Disk; readonly process: Process; readonly instance: NetInstance };
 
 /** A process over a new disk whose clock starts at 5, with reminder r1 enqueued at that time. */
-async function remindedAt5(handler: Handler): Promise<Opened> {
+async function remindedAt5(handler: Execution): Promise<Opened> {
 	const clock = createClock(5);
 	const runtime = createRuntime(remindersOptions(handler, clock));
 	const disk = createDisk([runtime.extension], clock);
@@ -62,7 +62,7 @@ describe("delayed results", () => {
 	});
 
 	test.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
-		"a delay of %d ms is a bug in the handler: it is reported, and the handler runs again after retryDelayMs",
+		"a native task rejects an invalid delay of %d ms once and holds its binding",
 		async (bad) => {
 			const handler = reminderHandler((r, run) => elapsedAfter(r, run === 1 ? bad : 10));
 			const { disk, process } = await remindedAt5(handler);
@@ -73,13 +73,13 @@ describe("delayed results", () => {
 					message: `a delay must be a finite number of milliseconds, at least 0, not ${String(bad)}`,
 				},
 			]);
-			expect(handler.runs()).toBe(2);
-			// The second run is at 6, after retryDelayMs, but the delay counts from the start at 5.
-			expect(resultTime(disk)).toBe(15);
+			expect(handler.runs()).toBe(1);
+			expect(resultTime(disk)).toBeUndefined();
+			expect(lastState(disk.history()).marking).toStrictEqual({ "remind:busy": [{ r: "r1" }] });
 		},
 	);
 
-	test("a delayed result that does not fit the transition is reported before the task sleeps, and the handler runs again", async () => {
+	test("an invalid native result faults settlement after the explicit sleep without rerunning the worker", async () => {
 		const handler = reminderHandler((r, run) => ({
 			delayMs: 10,
 			result: { variant: run === 1 ? "early" : "elapsed", value: r },
@@ -91,11 +91,12 @@ describe("delayed results", () => {
 		expect(() => {
 			throw report;
 		}).toThrow(/^invalid batch result:remind\/1: /);
-		expect(handler.runs()).toBe(2);
-		expect(resultTime(disk)).toBe(15);
+		expect(handler.runs()).toBe(1);
+		expect(disk.clock.now()).toBe(15);
+		expect(resultTime(disk)).toBeUndefined();
 	});
 
-	test("a throw in the commit of a due result is reported, and the result commits after retryDelayMs, with no new run of the handler", async () => {
+	test("a throw in settlement faults once and permits explicit resolution without rerunning the worker", async () => {
 		let throws = 1;
 		const transition = remindTransition((value): readonly Token[] => {
 			if (throws > 0) {
@@ -105,11 +106,14 @@ describe("delayed results", () => {
 			return [value];
 		});
 		const handler = reminderHandler((r) => elapsedAfter(r, 10), transition);
-		const { disk, process } = await remindedAt5(handler);
+		const { disk, process, instance } = await remindedAt5(handler);
 		await process.settle();
 		expect(disk.reports()).toMatchObject([{ message: "the end's arc failed once" }]);
 		expect(handler.runs()).toBe(1);
-		expect(resultTime(disk)).toBe(16);
+		expect(resultTime(disk)).toBeUndefined();
+		await instance.resolve("remind/1", { variant: "elapsed", value: "r1" }, context);
+		expect(resultTime(disk)).toBe(15);
+		expect(handler.runs()).toBe(1);
 	});
 
 	test("a broken net instance in the commit of a due result ends the task faulted, reported once, with no new run of the handler", async () => {

@@ -4,8 +4,8 @@ import { createModels } from "@earendil-works/pi-ai";
 import { createRegistry, Harness, MemoryStorage } from "@earendil-works/pi-durable";
 import { definitionOrder } from "@petrus/petri-net";
 import type { Marking, Net } from "@petrus/petri-net";
-import type { Clock, Handler } from "@petrus/runtime";
-import { createRuntime, withHandlers } from "@petrus/runtime";
+import type { Clock, Execution } from "@petrus/runtime";
+import { createRuntime } from "@petrus/runtime";
 import { Value } from "typebox/value";
 import type { Recording } from "@petrus/net-view-model";
 import { projectNet } from "@petrus/net-view-model";
@@ -15,23 +15,20 @@ import { replay } from "@petrus/runtime-replay";
 export async function recordRun(
 	title: string,
 	base: Net,
-	handlers: readonly Handler[],
+	executions: readonly Execution[],
 	marking: Marking,
 	clock: Clock,
 ): Promise<Recording> {
-	const net = withHandlers(
-		base,
-		handlers.map(({ transition }) => transition),
-	);
 	const runtime = createRuntime({
 		name: "viewer-demo",
 		nonce: randomUUID(),
 		net: base,
-		handlers,
+		executions,
 		policy: definitionOrder,
 		clock,
-		retryDelayMs: 1_000,
+		startLimit: 10_000,
 	});
+	const net = runtime.net;
 	const registry = createRegistry();
 	registry.install(runtime.extension);
 	const context = BACKGROUND_CONTEXT;

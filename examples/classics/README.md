@@ -13,8 +13,8 @@ The [viewer](docs/viewer.md) shows recorded runs.
 
 Each net in `src/` has handlers over an outside-service port. Its test in `test/` runs it
 with a fake service and a fast-check scheduler that ends the work in any order. The runtime runs on Pi Durable:
-the first enqueue gives the net its first tokens, each commit steps the net until nothing fires, and each piece of
-work runs as a Durable task. `test/disk.ts` keeps Durable's storage in memory, records the marking of every commit
+the first enqueue reserves enabled bindings, and each operation has a coordinator and an owned native task.
+Terminal results settle in later commits. `test/disk.ts` keeps Durable's storage in memory, records the marking of every commit
 that lands, and can kill a process at any storage commit; then a new process, with a new Harness over the same
 storage, enqueues the same batch again (it adds nothing when it landed) and runs the tasks until none is left. So
 the invariant is checked at each commit.
@@ -49,6 +49,10 @@ records each time two holders are inside at once. A holder is an operation, so a
 after a crash is the same holder. Test: `test/mutual-exclusion.test.ts` "never has two holders inside, under any
 order of work and a crash at any commit".
 
+The worker can choose completion while two children remain live. The resource stays held until both children end
+and settlement commits. Test: `test/mutual-exclusion.test.ts`
+"holds the mutex through native completion and both owned children, under generated completion orders and crashes".
+
 ## 3 Dining philosophers
 
 `src/dining-philosophers.ts`. Philosophers sit round a table with one fork between each two plates. Philosopher
@@ -82,8 +86,8 @@ the place `Sent` and the handler transition `Wait` are added for the timer.
   network makes it.
 - `ReceivePacket` keeps a packet only when its number is `NextRec`, and puts an acknowledgement with the number
   it expects next on `C`. `ReceiveAck` sets `NextSend` to the number of the acknowledgement.
-- `Wait` is a handler transition, the retransmission timer. It takes the sent packet from `Sent`. Its handler
-  returns the result `elapsed` with a delay, so the result counts a fixed wait after `SendPacket` fired; then
+- `Wait` is a handler transition, the retransmission timer. It takes the sent packet from `Sent`. Its native task
+  sleeps until its allocation time plus the delay, then returns `elapsed`. The result counts no earlier than that deadline; then
   `elapsed` puts the packet back on `PacketsToSend`. This is the delay `@+Wait` on that arc in the paper's timed
   net. The wait is a Durable sleep, so it survives a crash. The paper's other delays are the time the
   handlers' work takes.
@@ -100,13 +104,9 @@ it allows this.
 
 ## 5 Limits
 
-- The tests crash the storage at a commit. In mutual exclusion no commit lands while a process is inside: the
-  commit that marks a task running lands before its handler enters, and the next commit is the handler's result.
-  So a crash at a commit never stops work in progress there. A real process can also die between commits, while
-  its handler is in the resource. Then the next Harness runs the same operation's task again, and the next process
-  enters after that run ends. If the first run's work goes on outside after the process died, as a remote call can, two
-  holders are inside at once. A resource that can outlive the process that called it needs a lease or a fence
-  keyed by the operation id. The same holds for a meal and its forks. No test covers this case.
+- Tests crash storage at commit boundaries. They do not prove exclusion for remote work that outlives its process.
+  A new process may repeat an external call while the old call still runs. Such resources need a lease or fence
+  keyed by the instance and operation id. The same limit applies to a meal and its forks.
 - The nets above declare no variant `aborted`, so aborting a task leaves its operation in flight (see
   [aborts.md](../../packages/runtime/docs/aborts.md)). A process that never leaves holds the resource token for ever.
 - A philosopher can starve. EWD 310 says that taking both forks at once leaves "a particular philosopher being
@@ -114,6 +114,5 @@ it allows this.
   holds a fork the philosopher between them needs. `definitionOrder` keeps no state, so it cannot hold a
   neighbour back for a philosopher who has waited long. Test: `test/dining-philosophers.test.ts` "lets a
   philosopher starve while both neighbours take turns, because definitionOrder keeps no state".
-- A net that can fire for ever never becomes quiet. In the paper's untimed net, `SendPacket` puts the packet
-  straight back on `PacketsToSend`, so it can fire in every step, and a commit throws after 1,000 steps. The timer
-  lets each commit of this net end.
+- Every example supplies a finite authored-start ceiling. A cycle can span commits but pauses when its next step
+  exceeds the remaining credit. Existing operations still settle. The host must explicitly raise the ceiling to resume starts.

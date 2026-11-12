@@ -1,17 +1,21 @@
 import { randomUUID } from "node:crypto";
+import type { JsonValue } from "@earendil-works/chord";
+import type { Harness, JsonObject, TaskRecord } from "@earendil-works/pi-durable";
+import { defineTask } from "@earendil-works/pi-durable";
 import fc from "fast-check";
 import type { ColourSet, Marking, Net, Place, Token } from "@petrus/petri-net";
 import { definitionOrder, placeId, tokenKey } from "@petrus/petri-net";
 import type {
 	Batch,
-	DelayedResult,
-	Handler,
+	Execution,
+	ExecutionInput,
 	HandlerResult,
 	HandlerTransition,
+	NetInstance,
 	NetInstanceState,
 	RuntimeOptions,
 } from "../src/index.ts";
-import { withHandlers } from "../src/index.ts";
+import { execution } from "../src/index.ts";
 import type { ResultArc } from "../src/index.ts";
 import { operationsInFlight, startedOperations } from "../src/operations.ts";
 import type { Disk, Faults, TestClock } from "./disk.ts";
@@ -19,6 +23,7 @@ import { context, createClock, createDisk, inProcess } from "./disk.ts";
 import type { Fault, RuntimeFactory } from "./properties.ts";
 import { everyCommitHeld, faultArbitrary, lastState } from "./properties.ts";
 import { finished, queue, slots, work as jobsWork } from "./handler-properties.ts";
+import { completed, completeSaved } from "./native-execution.ts";
 
 const finishedArc: ResultArc<"j" | "s"> = { place: finished, expression: ({ j }) => [j] };
 const slotBack: ResultArc<"j" | "s"> = { place: slots, expression: ({ s }) => [s] };
@@ -41,9 +46,6 @@ export const work: HandlerTransition<"j" | "s"> = {
 
 const workNet: Net = { places: [queue, slots, finished, cancelled], transitions: [] };
 
-/** The plain net that the runtime runs, for replay. */
-const plainWorkNet: Net = withHandlers(workNet, [work]);
-
 /** The first batch: the jobs, and `slotCount` slots. */
 export function jobsBatch(jobs: readonly string[], slotCount: number): Batch {
 	return {
@@ -52,15 +54,15 @@ export function jobsBatch(jobs: readonly string[], slotCount: number): Batch {
 	};
 }
 
-export function workOptions(handler: Handler, clock: TestClock): RuntimeOptions {
+export function workOptions(handler: Execution, clock: TestClock): RuntimeOptions {
 	return {
 		name: "work",
 		nonce: randomUUID(),
 		net: workNet,
 		policy: definitionOrder,
 		clock,
-		handlers: [handler],
-		retryDelayMs: 1,
+		executions: [handler],
+		startLimit: 200,
 	};
 }
 
@@ -84,17 +86,34 @@ export function untilAborted(signal: AbortSignal): Promise<never> {
 export function workHandler(
 	pause: () => Promise<void>,
 	delays: ReadonlyMap<string, number> = new Map(),
-): Handler<"j" | "s"> & { readonly ran: () => readonly string[] } {
+): Execution & { readonly ran: () => readonly string[] } {
 	const ran: string[] = [];
-	return {
-		transition: work,
-		run: async ({ j }, { operationId, signal }) => {
-			ran.push(operationId);
-			await Promise.race([pause(), untilAborted(signal)]);
-			const result: HandlerResult = { variant: "done", value: j };
-			const delayMs = typeof j === "string" ? delays.get(j) : undefined;
-			return delayMs === undefined ? result : ({ delayMs, result } satisfies DelayedResult);
+	type Checkpoint = { readonly phase: "run" } | { readonly phase: "due"; readonly result: HandlerResult };
+	const task = defineTask<ExecutionInput, Checkpoint, HandlerResult>({
+		name: `abort-test:${randomUUID()}`,
+		version: 1,
+		initial: () => ({ phase: "run" }),
+		phases: {
+			run: async ({ input }, runtime, context) => {
+				ran.push(input.id);
+				await Promise.race([pause(), untilAborted(runtime.signal)]);
+				const j = input.binding.j ?? null;
+				const result: HandlerResult = { variant: "done", value: j };
+				const delayMs = typeof j === "string" ? delays.get(j) : undefined;
+				if (delayMs !== undefined) {
+					await runtime.sleepUntil(input.startedAt + delayMs, { phase: "due", result }, context);
+				} else {
+					await runtime.commit(() => completed(result), context);
+				}
+			},
+			due: completeSaved,
 		},
+		abort: async (_task, runtime, context) => {
+			await runtime.commit(() => completed({ variant: "aborted", value: null }), context);
+		},
+	});
+	return {
+		...execution(work, task),
 		ran: () => ran,
 	};
 }
@@ -135,10 +154,11 @@ function endMarking(marking: Marking): string {
 
 /**
  * At every commit the marking is the replay of the log and the net is quiet. At the end every job ended once, both
- * slots are back, nothing is in flight and no task is live; each operation has one result; and the operations that
- * ended `aborted` include each one whose abort returned `marked`, and only ones the host tried to abort.
+ * slots are back, nothing is in flight and no task is live. Each operation has one result.
+ * Only operations that the host tried to cancel end with an aborted result.
  */
 function abortsHeld(
+	net: Net,
 	history: readonly NetInstanceState[],
 	jobs: readonly string[],
 	aborts: Aborts,
@@ -146,7 +166,7 @@ function abortsHeld(
 ): boolean {
 	const final = lastState(history);
 	return (
-		everyCommitHeld(plainWorkNet, definitionOrder, history) &&
+		everyCommitHeld(net, definitionOrder, history) &&
 		endMarking(final.marking) === endMarking({ [finished.id]: jobs, [slots.id]: ["slot", "slot"] }) &&
 		allEnded(final, liveTasks) &&
 		abortedAsCalled(final, aborts)
@@ -163,10 +183,10 @@ function allEnded(final: NetInstanceState, liveTasks: number): boolean {
 	);
 }
 
-/** Each operation whose abort returned `marked` ended `aborted`, and only an operation that the host tried to abort. */
+/** Only operations that the host tried to cancel have an aborted result. A marked abort can preserve success. */
 function abortedAsCalled(final: NetInstanceState, aborts: Aborts): boolean {
 	const aborted = abortedOperations(final);
-	return [...aborts.marked].every((id) => aborted.has(id)) && [...aborted].every((id) => aborts.called.has(id));
+	return [...aborted].every((id) => aborts.called.has(id));
 }
 
 const runArbitrary = fc.record({
@@ -177,13 +197,77 @@ const runArbitrary = fc.record({
 
 type Run = { readonly jobs: string[]; readonly delays: Record<string, number>; readonly aborted: string[] };
 
+function objectValue(value: JsonValue | undefined): JsonObject {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error("the native task did not store an object");
+	}
+	return value;
+}
+
+type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
+
+function nativeResult(worker: StoredTask): JsonObject {
+	const { state } = worker;
+	if (state.status !== "terminal" || state.outcome.status !== "completed") {
+		throw new Error("the native worker did not choose a result");
+	}
+	return objectValue(state.outcome.result);
+}
+
+function nativeResultHeld(worker: StoredTask, state: NetInstanceState): boolean {
+	const input = objectValue(worker.input);
+	const id = input.id;
+	if (typeof id !== "string") throw new Error("the worker has no operation id");
+	const result = nativeResult(worker);
+	const ingress = state.log.find((entry) => entry.kind === "ingress" && entry.requestId === `result:${id}`);
+	return (
+		ingress?.kind === "ingress" &&
+		Object.values(ingress.tokens)
+			.flat()
+			.some((token) => tokenKey(token) === tokenKey({ binding: input.binding ?? null, ...result }))
+	);
+}
+
+async function verifyNativeResults(harness: Harness, instance: NetInstance): Promise<void> {
+	const conversationId = (await harness.root(context)).id;
+	const records = await harness.commit((tx) => tx.scanTasks({ conversationId }, 100), context);
+	if (records.next !== undefined) throw new Error("the finite workload exceeded one page of tasks");
+	const workers = records.items.filter(({ kind }) => kind.startsWith("abort-test:"));
+	const state = await instance.state(context);
+	if (!workers.every((worker) => nativeResultHeld(worker, state))) {
+		throw new Error("settlement lost or replaced the native worker's result");
+	}
+}
+
+/** Every case cancels after the worker sleeps, before its deadline, and checks the retained native result. */
+export function sleepingAbortProperty(factory: RuntimeFactory): fc.IAsyncProperty<[number]> {
+	return fc.asyncProperty(fc.integer({ min: 1, max: 20 }), async (delay) => {
+		const clock = createClock();
+		const worker = workHandler(() => Promise.resolve(), new Map([["j1", delay]]));
+		const runtime = factory(workOptions(worker, clock));
+		const disk = createDisk([runtime.extension], clock);
+		await inProcess(disk, {}, async ({ harness, runReady, settle }) => {
+			const instance = runtime.instance(harness, (await harness.root(context)).id);
+			await instance.enqueue(jobsBatch(["j1"], 1), context);
+			await runReady();
+			const records = await harness.commit((tx) => tx.scanTasks({}, 100), context);
+			if (!records.items.some((task) => task.state.status === "sleeping")) {
+				throw new Error("the worker must sleep before cancellation");
+			}
+			await instance.abort("work/1", context);
+			await settle();
+			await verifyNativeResults(harness, instance);
+		});
+	});
+}
+
 /**
  * The host aborts the operations of some jobs at times the scheduler chooses, while work ends in any order, some of
  * it after a delay, and the first process dies before or after any of its commits lands. After a crash a new
  * process enqueues the jobs again and aborts the same jobs' operations that are still in flight. Then `abortsHeld`.
  */
 export function abortFaultProperty(factory: RuntimeFactory): fc.IAsyncProperty<[fc.Scheduler, Run, Fault]> {
-	return fc.asyncProperty(fc.scheduler(), runArbitrary, faultArbitrary(16), async (scheduler, run, fault) => {
+	return fc.asyncProperty(fc.scheduler(), runArbitrary, faultArbitrary(64), async (scheduler, run, fault) => {
 		const clock = createClock();
 		const handler = workHandler(
 			() => scheduler.schedule(Promise.resolve(), "work"),
@@ -222,6 +306,12 @@ export function abortFaultProperty(factory: RuntimeFactory): fc.IAsyncProperty<[
 				await abortInFlight();
 				await abortInFlight();
 				await settle();
+				await verifyNativeResults(harness, instance);
+				for (const operation of await instance.inFlight(context)) {
+					if (!aborts.called.has(operation.id)) throw new Error("an unrequested operation lost its result");
+					await instance.resolve(operation.id, { variant: "aborted", value: null }, context);
+				}
+				await settle();
 				liveTasks = (await harness.inspect(context)).tasks.length;
 			});
 			if ((await scheduler.waitFor(body)) === "done") {
@@ -229,6 +319,6 @@ export function abortFaultProperty(factory: RuntimeFactory): fc.IAsyncProperty<[
 			}
 			faults = {};
 		}
-		return abortsHeld(disk.history(), run.jobs, aborts, liveTasks);
+		return abortsHeld(runtime.net, disk.history(), run.jobs, aborts, liveTasks);
 	});
 }

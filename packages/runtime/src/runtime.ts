@@ -4,17 +4,19 @@ import { defineExtension } from "@earendil-works/pi-durable";
 import type { Net, SelectionPolicy } from "@petrus/petri-net";
 import { netProblems } from "@petrus/petri-net";
 import { admit } from "./admit.ts";
+import { createCoordination } from "./coordination.ts";
+import type { Execution } from "./execution.ts";
 import { createNetInstanceCache } from "./net-instance-cache.ts";
 import { netInstanceRecord } from "./net-instance-record.ts";
-import { createOperationRun } from "./operation-run.ts";
-import type { Handler, HandlerResult } from "./handlers.ts";
-import { handlerProblems, withHandlers } from "./handlers.ts";
+import type { HandlerResult } from "./handlers.ts";
+import { withHandlers } from "./handlers.ts";
 import type { Committed } from "./net-instance-commit.ts";
 import { checkedState, commitToNetInstance } from "./net-instance-commit.ts";
-import type { Batch, NetInstanceState } from "./net-instance.ts";
+import type { Batch, NetInstanceState, StartBudget } from "./net-instance.ts";
 import { viewOf } from "./net-instance-view.ts";
 import type { Operation } from "./operations.ts";
 import { admitResult, hostBatchProblems, operationsInFlight, startedOperation } from "./operations.ts";
+import { pureExecution } from "./pure-execution.ts";
 import type { Clock } from "./seams.ts";
 
 /** Where net instances live: a Durable Harness, whose commits, committed reads and task aborts a net instance uses. */
@@ -23,44 +25,43 @@ export type NetInstanceHost = Pick<Harness, "commit" | "snapshot" | "abortTask">
 /** One net instance: the state of the net in one Durable conversation. */
 export type NetInstance = {
 	/**
-	 * Adds a batch of tokens from outside and steps the net until it is quiet, in one commit with the batch's
-	 * ingress, the firings and the start of the work they begin. A batch whose request id the log already holds adds
-	 * nothing and returns the recorded ingress, so a retry after a lost reply is safe. The first batch of an instance
-	 * gives it its first tokens: a new instance has none.
+	 * Admits tokens and reserves enabled bindings with their coordinators in one commit. Returns before execution.
+	 * A repeated request returns its recorded ingress without allocating again. A new instance has no tokens.
 	 */
 	readonly enqueue: (batch: Batch, context: Context) => Promise<Committed>;
 	/** The committed state. A conversation with no instance yet has no tokens and an empty log. */
 	readonly state: (context: Context) => Promise<NetInstanceState>;
 	/** The operations that the committed log started and has no result for, in log order. */
 	readonly inFlight: (context: Context) => Promise<readonly Operation[]>;
+	/** Durable start usage and pause state, separate from the marking and log. */
+	readonly budget: (context: Context) => Promise<StartBudget>;
+	/** Raises the absolute start ceiling. Repeated increases do not grant additional credit. */
+	readonly raiseStartLimit: (ceiling: number, context: Context) => Promise<Committed>;
 	/**
-	 * Aborts an operation. Its task stops the handler (see `HandlerContext.signal`), then one commit records the
-	 * result `aborted`, steps the net until it is quiet, and ends the task. `marked` when the abort was recorded,
-	 * `terminal` when the task had already ended: as a rule its operation has a result, but a faulted task leaves its
-	 * operation in flight. An operation that has not started, or whose transition declares
-	 * no variant `aborted`, is a bug in the host, so it throws.
+	 * Requests cancellation through the coordinator's ownership tree. A mark does not promise a domain-aborted result.
+	 * Native task code chooses the result. Cancellation before launch creates no worker and leaves the inputs held.
 	 */
 	readonly abort: (operationId: string, context: Context) => Promise<"marked" | "terminal">;
 	/**
-	 * Records a supplied result after the operation's task has ended. Refuses a task that has not ended.
-	 * Returns the recorded ingress and no firings when a valid result was already recorded. Does not restart the task.
+	 * Records a supplied result only after the coordinator and its worker have ended. Preserves their outcomes.
+	 * Validates every call, including duplicates. The first valid recorded result wins without restarting execution.
 	 */
 	readonly resolve: (operationId: string, result: HandlerResult, context: Context) => Promise<Committed>;
 };
 
 /** A net that runs on Pi Durable: the extension that the host installs, and the instances it opens. */
 export type Runtime = {
-	/** Holds the task kind that runs the operations. Install it in the Harness's registry before `Harness.open`. */
+	/** The expanded start/end net used by committed-log replay and inspection. */
+	readonly net: Net;
+	/** Registers coordinators and execution tasks. Install additional native child tasks in the same Harness registry. */
 	readonly extension: Extension;
 	/** The net instance in one conversation of a Harness that has the extension. */
 	readonly instance: (host: NetInstanceHost, conversationId: ConversationId) => NetInstance;
 };
 
 /**
- * What a runtime needs: a name that is unique in the Harness, the net, the policy that orders and filters the
- * enabled binding elements, the clock that stamps the log, the handler transitions with their handlers, and how long
- * a failed handler run waits before it runs again. Give the Harness the same clock as `now`: the handler tasks
- * stamp their commits with it.
+ * A runtime name, authored net, selection policy, shared Harness clock, native executions, and initial start ceiling.
+ * Native task names must be unique in the Harness registry. Stored budgets override the initial ceiling on reopen.
  */
 export type RuntimeOptions = {
 	readonly name: string;
@@ -69,35 +70,43 @@ export type RuntimeOptions = {
 	readonly net: Net;
 	readonly policy: SelectionPolicy;
 	readonly clock: Clock;
-	readonly handlers?: readonly Handler[];
-	readonly retryDelayMs: number;
+	readonly executions?: readonly Execution[];
+	/** A finite, nonnegative integer ceiling for the instance's committed authored starts. */
+	readonly startLimit: number;
 };
 
 /**
- * Builds the runtime of one net. It runs the plain net that `withHandlers` makes from the net and the handler
- * transitions. A net with problems (see `netProblems`) is a bug, so it throws. Every commit steps the net until the
- * policy selects nothing, and each operation that a commit starts runs in a Durable task created in that commit.
+ * Expands every authored transition into a start and declared ends. Pure transitions use a minimal native task.
+ * Internal ends settle before policy-selected starts. A refused whole step pauses starts without refusing settlement.
  */
 export function createRuntime(options: RuntimeOptions): Runtime {
-	const { name, policy, clock, handlers = [], retryDelayMs } = options;
+	const { name, policy, clock, startLimit } = options;
+	checkCeiling(startLimit);
+	const executions = [
+		...options.net.transitions.map((transition) => pureExecution(name, transition)),
+		...(options.executions ?? []),
+	];
 	const net = withHandlers(
-		options.net,
-		handlers.map((handler) => handler.transition),
+		{ places: options.net.places, transitions: [] },
+		executions.map((registered) => registered.transition),
 	);
-	const problems = [...netProblems(net), ...handlerProblems(handlers.map((handler) => handler.transition))];
+	const problems = netProblems(net);
 	if (problems.length > 0) {
 		throw new Error(`invalid net: ${problems.join("; ")}`);
 	}
-	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
-	const { task, parts, taskOf, abortable } = createOperationRun({
-		name,
-		cache: createNetInstanceCache(options.nonce),
-		net,
-		policy,
-		handlerIds,
-		handlers,
-		retryDelayMs,
-	});
+	const handlerIds = new Set(executions.map((registered) => registered.transition.id));
+	const { task, parts, taskOf, requireEnded } = createCoordination(
+		{
+			name,
+			startLimit,
+			cache: createNetInstanceCache(options.nonce),
+			net,
+			policy,
+			handlerIds,
+		},
+		executions,
+	);
+	const initialBudget: StartBudget = { ceiling: startLimit, used: 0, paused: false };
 
 	function instance(host: NetInstanceHost, conversationId: ConversationId): NetInstance {
 		async function state(context: Context): Promise<NetInstanceState> {
@@ -118,13 +127,37 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 			},
 			state,
 			inFlight: async (context) => operationsInFlight(handlerIds, (await state(context)).log),
+			budget: async (context) => {
+				const stored = await host.snapshot(netInstanceRecord, conversationId, context);
+				if (stored === undefined) return initialBudget;
+				checkedState(parts, stored);
+				return stored.budget ?? initialBudget;
+			},
+			raiseStartLimit: (ceiling, context) =>
+				host.commit(async (tx) => {
+					checkCeiling(ceiling);
+					const draft = await tx.doc(netInstanceRecord, conversationId);
+					const current = checkedState(parts, draft);
+					const budget = draft.budget ?? initialBudget;
+					const requestId = `start-limit:${String(ceiling)}`;
+					if (viewOf(current).ingressOf(requestId) === undefined && ceiling < budget.ceiling) {
+						throw new RangeError("the start ceiling cannot decrease");
+					}
+					if (ceiling > budget.ceiling) {
+						draft.budget = { ...budget, ceiling, paused: false };
+					}
+					const at = clock.now();
+					return commitToNetInstance(
+						tx,
+						conversationId,
+						parts,
+						(view) => admit(net, view, { requestId, tokens: {} }, at),
+						at,
+					);
+				}, context),
 			resolve: (operationId, result, context) =>
 				host.commit(async (tx) => {
-					const taskId = await taskOf(tx, conversationId, operationId);
-					const record = await tx.task(taskId);
-					if (record?.state.status !== "terminal") {
-						throw new Error(`the task of operation ${operationId} has not ended`);
-					}
+					await requireEnded(tx, conversationId, operationId);
 					const at = clock.now();
 					return commitToNetInstance(
 						tx,
@@ -139,14 +172,24 @@ export function createRuntime(options: RuntimeOptions): Runtime {
 				if (operation === undefined) {
 					throw new Error(`no operation ${operationId} has started`);
 				}
-				if (!abortable(operation.transition)) {
-					throw new Error(`${operation.transition} declares no variant aborted, so its tokens would stay taken`);
-				}
 				const taskId = await host.commit((tx) => taskOf(tx, conversationId, operationId), context);
 				return host.abortTask(taskId, context);
 			},
 		};
 	}
 
-	return { extension: defineExtension({ name: `petrus:${name}`, tasks: [task] }), instance };
+	return {
+		net,
+		extension: defineExtension({
+			name: `petrus.native-v1:${name}`,
+			tasks: [task, ...executions.flatMap((registered) => registered.extension.tasks ?? [])],
+		}),
+		instance,
+	};
+}
+
+function checkCeiling(ceiling: number): void {
+	if (!Number.isSafeInteger(ceiling) || ceiling < 0) {
+		throw new RangeError("the start ceiling must be a nonnegative safe integer");
+	}
 }

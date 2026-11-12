@@ -35,16 +35,24 @@ function elementFor(state: IndexState, candidate: Candidate): BindingElement {
 	return { transition: candidate.owner.transition.id, binding: candidate.binding };
 }
 
-/** Consumes the owner, allocates against pre-step counts, and returns the fired elements and the new owner. */
+/**
+ * Consumes the owner and allocates against pre-step counts. If allocation exceeds `limit`, fires nothing and
+ * returns an unchanged marking and journal with `limited: true`. The default permits any allocated step.
+ */
 export function stepIndexed(
 	indexed: IndexedMarking,
 	policy: SelectionPolicy,
+	limit: number = Number.POSITIVE_INFINITY,
 ): {
 	readonly indexed: IndexedMarking;
 	readonly fired: readonly BindingElement[];
+	readonly limited: boolean;
 } {
 	const state = consumeIndex(indexed);
 	const taken = allocate(state, policy(list(state)));
+	if (taken.length > limit) {
+		return { indexed: ownIndex(state), fired: [], limited: true };
+	}
 	const changes: Changes = new Map();
 	removeDemand(state, totalDemand(taken), changes);
 	for (const { transition, element } of taken) {
@@ -53,7 +61,7 @@ export function stepIndexed(
 		}
 	}
 	notify(state, changes);
-	return { indexed: ownIndex(state), fired: taken.map(({ element }) => element) };
+	return { indexed: ownIndex(state), fired: taken.map(({ element }) => element), limited: false };
 }
 
 function allocate(state: IndexState, elements: readonly BindingElement[]): readonly Allocation[] {

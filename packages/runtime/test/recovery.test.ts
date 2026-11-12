@@ -1,11 +1,12 @@
 import { expect, onTestFinished, test } from "vitest";
+import { defineTask } from "@earendil-works/pi-durable";
 import type { ConversationRecord, TaskInspection } from "@earendil-works/pi-durable";
-import type { Handler, NetInstance, Runtime } from "../src/index.ts";
-import { createRuntime } from "../src/index.ts";
+import type { Execution, ExecutionInput, HandlerResult, NetInstance, Runtime } from "../src/index.ts";
+import { createRuntime, execution } from "../src/index.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
 import { untilAborted } from "./abort-properties.ts";
-import { restlessJobsNet } from "./broken-instance.ts";
-import { context, createClock, createDisk } from "./disk.ts";
+import { immediateExecution } from "./native-execution.ts";
+import { context, createClock, createDisk, Crashed, inProcess } from "./disk.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
 import {
 	createService,
@@ -20,7 +21,33 @@ import {
 
 const answer = { variant: "done", value: "receipt repaired" };
 
-async function opened(handler?: Handler): Promise<
+function sleepingWork(delayMs: number, calls: () => void = () => undefined): Execution {
+	return execution(
+		work,
+		defineTask<ExecutionInput, { readonly phase: "run" } | { readonly phase: "due" }, HandlerResult>({
+			name: "recovery:sleeping-work",
+			version: 1,
+			initial: () => ({ phase: "run" }),
+			phases: {
+				run: async ({ input }, runtime, context) => {
+					calls();
+					await runtime.sleepUntil(input.startedAt + delayMs, { phase: "due" }, context);
+				},
+				due: async (_task, runtime, context) => {
+					await runtime.commit(
+						() => ({ status: "terminal", outcome: { status: "completed", result: answer } }),
+						context,
+					);
+				},
+			},
+			abort: async (_task, runtime, context) => {
+				await runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context);
+			},
+		}),
+	);
+}
+
+async function opened(handler?: Execution): Promise<
 	Process & {
 		readonly instance: NetInstance;
 		readonly runtime: Runtime;
@@ -37,7 +64,7 @@ async function opened(handler?: Handler): Promise<
 	);
 	const runtime = createRuntime({
 		...options,
-		handlers: [handler ?? { transition: work, run: () => Promise.resolve(answer) }],
+		executions: [handler ?? immediateExecution(work, () => Promise.resolve(answer))],
 	});
 	const disk = createDisk([runtime.extension], clock);
 	const process = await disk.open();
@@ -106,7 +133,9 @@ test("refuses invalid results and unknown operations without changing a terminal
 	await expect(instance.resolve("work/1", { variant: "lost", value: null }, context)).rejects.toThrow(
 		"invalid batch result:work/1",
 	);
-	await expect(instance.resolve("work/999", answer, context)).rejects.toThrow("no task runs the operation work/999");
+	await expect(instance.resolve("work/999", answer, context)).rejects.toThrow(
+		"no coordinator runs the operation work/999",
+	);
 	await expect(instance.resolve("work/1", { variant: "done", value: null }, context)).rejects.toThrow(
 		"invalid batch result:work/1",
 	);
@@ -159,47 +188,66 @@ test("a failed resolution commits nothing and a retry releases an aborted operat
 
 test("refuses pending, running and sleeping tasks before recording a supplied result", async () => {
 	const entered = Promise.withResolvers<undefined>();
-	const { harness, instance, task } = await opened({
-		transition: work,
-		run: (_binding, { signal }) => {
+	const { harness, instance, task } = await opened(
+		immediateExecution(work, (_input, signal) => {
 			entered.resolve(undefined);
 			return untilAborted(signal);
-		},
-	});
+		}),
+	);
 	const before = await instance.state(context);
 	await expect(instance.resolve("work/1", answer, context)).rejects.toThrow("has not ended");
 	harness.resume();
 	await entered.promise;
-	expect((await harness.getTask(task.record.id, context))?.state.status).toBe("running");
+	expect((await harness.getTask(task.record.id, context))?.state.status).toBe("waiting");
 	await expect(instance.resolve("work/1", answer, context)).rejects.toThrow("has not ended");
 	expect(await instance.state(context)).toStrictEqual(before);
-	const sleeping = await opened({ transition: work, run: () => Promise.resolve({ delayMs: 100, result: answer }) });
+	const sleeping = await opened(sleepingWork(100));
 	await sleeping.runReady();
-	expect((await sleeping.harness.getTask(sleeping.task.record.id, context))?.state.status).toBe("sleeping");
+	expect((await sleeping.harness.getTask(sleeping.task.record.id, context))?.state.status).toBe("waiting");
+	expect(
+		(await sleeping.harness.inspect(context)).tasks.some(({ record }) => record.state.status === "sleeping"),
+	).toBe(true);
 	await expect(sleeping.instance.resolve("work/1", answer, context)).rejects.toThrow("has not ended");
 	expect(await sleeping.instance.inFlight(context)).toHaveLength(1);
 });
 
 test.each([false, true])(
-	"a step-limit fault accepts a corrected result without retrying the handler (delayed=%s)",
+	"a settlement fault accepts a corrected result without retrying the native worker (delayed=%s)",
 	async (delayed) => {
 		const clock = createClock();
 		let calls = 0;
+		const broken = {
+			...work,
+			variants: {
+				...work.variants,
+				done: {
+					value: receipts.colourSet,
+					outputs: [
+						{
+							place: finished,
+							expression: (): never => {
+								throw new Error("broken done arc");
+							},
+						},
+					],
+				},
+			},
+		};
+		const countCall = (): void => {
+			calls += 1;
+		};
+		const native = delayed
+			? sleepingWork(10, countCall)
+			: immediateExecution(work, () => {
+					countCall();
+					return Promise.resolve(answer);
+				});
 		const runtime = createRuntime({
 			...jobsOptions(
 				createService(() => []),
 				clock,
 			),
-			net: restlessJobsNet,
-			handlers: [
-				{
-					transition: work,
-					run: () => {
-						calls += 1;
-						return Promise.resolve(delayed ? { delayMs: 10, result: answer } : answer);
-					},
-				},
-			],
+			executions: [{ ...native, transition: broken }],
 		});
 		const disk = createDisk([runtime.extension], clock);
 		const { harness, settle } = await disk.open();
@@ -207,11 +255,9 @@ test.each([false, true])(
 		const instance = runtime.instance(harness, (await harness.root(context)).id);
 		await instance.enqueue(firstBatch(["j1"]), context);
 		await settle();
-		expect(disk.reports().map(String)).toStrictEqual([
-			"BrokenNetInstance: the net did not become quiet after 1000 steps",
-		]);
+		expect(disk.reports().map(String)).toStrictEqual(["Error: broken done arc"]);
 		const commits = disk.history().length;
-		await expect(instance.resolve("work/1", answer, context)).rejects.toThrow("did not become quiet");
+		await expect(instance.resolve("work/1", answer, context)).rejects.toThrow("broken done arc");
 		expect(disk.history()).toHaveLength(commits);
 		await instance.resolve("work/1", { variant: "refused", value: "refused" }, context);
 		expect((await instance.state(context)).marking).toStrictEqual({
@@ -222,3 +268,42 @@ test.each([false, true])(
 		expect(calls).toBe(1);
 	},
 );
+
+test("resolve refuses a live coordinator after its worker committed a terminal result before a crash", async () => {
+	const clock = createClock();
+	const runtime = createRuntime({
+		...jobsOptions(
+			createService(() => []),
+			clock,
+		),
+		executions: [immediateExecution(work, () => Promise.resolve(answer))],
+	});
+	const disk = createDisk([runtime.extension], clock);
+	// Commit 5 stores the worker's result. The coordinator has not settled that result yet.
+	const outcome = await inProcess(disk, { crashAfterCommit: 5 }, async ({ harness, settle }) => {
+		await runtime.instance(harness, (await harness.root(context)).id).enqueue(firstBatch(["j1"]), context);
+		await settle();
+	});
+	expect(outcome).toBe("crashed");
+	const { harness, settle } = await disk.open();
+	onTestFinished(() => harness.close(context));
+	const instance = runtime.instance(harness, (await harness.root(context)).id);
+	const records = await harness.commit((tx) => tx.scanTasks({}, 100), context);
+	const coordinator = records.items.find((record) => record.owner === undefined);
+	const worker = records.items.find((record) => record.owner !== undefined);
+	expect(coordinator?.state.status).toBe("waiting");
+	expect(worker?.state).toStrictEqual({ status: "terminal", outcome: { status: "completed", result: answer } });
+	const before = await instance.state(context);
+	await expect(instance.resolve("work/1", answer, context)).rejects.toThrow(
+		"the coordinator of operation work/1 has not ended",
+	);
+	expect(await instance.state(context)).toStrictEqual(before);
+	await settle();
+	expect(await instance.inFlight(context)).toStrictEqual([]);
+	expect((await instance.state(context)).marking).toStrictEqual({
+		[slots.id]: ["slot", "slot"],
+		[finished.id]: ["j1"],
+		[receipts.id]: [answer.value],
+	});
+	expect(disk.reports()).toStrictEqual([new Crashed("the process died after commit 5")]);
+});

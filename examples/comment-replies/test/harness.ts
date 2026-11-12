@@ -13,7 +13,11 @@ import { net } from "../src/net.ts";
 export const context: Context = BACKGROUND_CONTEXT;
 
 /** One process of the app: the net instance in the root conversation of its Harness, and the Harness's close. */
-export type Opened = { readonly instance: NetInstance; readonly close: () => Promise<void> };
+export type Opened = {
+	readonly instance: NetInstance;
+	readonly settle: () => Promise<void>;
+	readonly close: () => Promise<void>;
+};
 
 /** A new Harness over `storage` with the runtime of the net, as `src/main.ts` opens it, at a clock that stands still. */
 export async function openInstance(storage: Storage): Promise<Opened> {
@@ -24,11 +28,15 @@ export async function openInstance(storage: Storage): Promise<Opened> {
 		net,
 		policy: definitionOrder,
 		clock,
-		retryDelayMs: 1_000,
+		startLimit: 10_000,
 	});
 	const registry = createRegistry();
 	registry.install(runtime.extension);
 	const harness = await Harness.open(storage, { models: createModels(), registry, now: clock.now }, context);
 	const root = await harness.root(context);
-	return { instance: runtime.instance(harness, root.id), close: () => harness.close(context) };
+	return {
+		instance: runtime.instance(harness, root.id),
+		settle: () => harness.waitForIdle(context),
+		close: () => harness.close(context),
+	};
 }

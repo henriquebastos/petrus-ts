@@ -3,8 +3,7 @@ import type { SelectionPolicy } from "@petrus/petri-net";
 import { definitionOrder, placeId, transitionId } from "@petrus/petri-net";
 import { describe, expect, onTestFinished, test } from "vitest";
 import type { NetInstance, Runtime, RuntimeOptions } from "../src/index.ts";
-import { createRuntime } from "../src/index.ts";
-import { stepLimit } from "../src/advance.ts";
+import { busyPlaceId, createRuntime } from "../src/index.ts";
 import { netInstanceRecord } from "../src/net-instance-record.ts";
 import { BrokenNetInstance } from "../src/net-instance.ts";
 import type { Disk, Process, TestClock } from "./disk.ts";
@@ -60,7 +59,7 @@ describe("createRuntime, examples", () => {
 			{ kind: "occurrence", transition: takeLeft, binding: { j: "j2" }, at: 6_000 },
 		];
 		expect(committed).toStrictEqual({ ingress, fired });
-		const state = { marking: { [left.id]: ["j1", "j2"] }, log: [ingress, ...fired] };
+		const state = { marking: { [busyPlaceId(takeLeft)]: [{ j: "j1" }, { j: "j2" }] }, log: [ingress, ...fired] };
 		expect(await instance.state(context)).toStrictEqual(state);
 		expect(disk.history()).toStrictEqual([state]);
 	});
@@ -70,14 +69,18 @@ describe("createRuntime, examples", () => {
 		const { instance } = await opened({ policy: rightOnly });
 		const { fired } = await instance.enqueue(batch, context);
 		expect(fired.map((occurrence) => occurrence.transition)).toStrictEqual([takeRight, takeRight]);
-		expect((await instance.state(context)).marking).toStrictEqual({ [right.id]: ["j1", "j2"] });
+		expect((await instance.state(context)).marking).toStrictEqual({
+			[busyPlaceId(takeRight)]: [{ j: "j1" }, { j: "j2" }],
+		});
 	});
 
 	test("a commit steps until the net is quiet: a policy that fires one element a step still fires them all", async () => {
 		const { disk, instance } = await opened({ policy: (enabled) => enabled.slice(0, 1) });
 		const { fired } = await instance.enqueue(batch, context);
 		expect(fired.map((occurrence) => occurrence.binding)).toStrictEqual([{ j: "j1" }, { j: "j2" }]);
-		expect(disk.history().map((state) => state.marking)).toStrictEqual([{ [left.id]: ["j1", "j2"] }]);
+		expect(disk.history().map((state) => state.marking)).toStrictEqual([
+			{ [busyPlaceId(takeLeft)]: [{ j: "j1" }, { j: "j2" }] },
+		]);
 	});
 
 	test("a batch that enables nothing commits its ingress and fires nothing", async () => {
@@ -112,25 +115,34 @@ describe("createRuntime, examples", () => {
 		expect(disk.history()).toHaveLength(1);
 	});
 
-	test("a commit fires up to stepLimit steps", async () => {
-		const { instance } = await opened({ name: "counter", net: counter(stepLimit) });
+	test("plain transitions reserve inputs before their native executions produce outputs", async () => {
+		const { process, instance } = await opened({ name: "counter", net: counter(3), startLimit: 3 });
 		const { fired } = await instance.enqueue({ requestId: "start", tokens: { [counted.id]: [0] } }, context);
-		expect(fired).toHaveLength(stepLimit);
-		expect((await instance.state(context)).marking).toStrictEqual({ [counted.id]: [stepLimit] });
+		expect(fired).toHaveLength(1);
+		expect((await instance.state(context)).marking).toStrictEqual({ [placeId("tick:busy")]: [{ n: 0 }] });
+		await process.settle();
+		expect((await instance.state(context)).marking).toStrictEqual({ [counted.id]: [3] });
+		expect(await instance.inFlight(context)).toStrictEqual([]);
 	});
 
-	test("refuses a net that can still fire after stepLimit steps, which is a bug in the net, and commits nothing", async () => {
-		const { disk, instance } = await opened({ name: "counter", net: counter(stepLimit + 1) });
-		await expect(instance.enqueue({ requestId: "start", tokens: { [counted.id]: [0] } }, context)).rejects.toThrow(
-			new BrokenNetInstance("the net did not become quiet after 1000 steps"),
-		);
-		expect(disk.history()).toStrictEqual([]);
+	test("a cycle pauses at its durable start ceiling and resumes after an explicit increase", async () => {
+		const { disk, process, instance } = await opened({ name: "counter", net: counter(4), startLimit: 3 });
+		await instance.enqueue({ requestId: "start", tokens: { [counted.id]: [0] } }, context);
+		await process.settle();
+		expect(await instance.budget(context)).toStrictEqual({ ceiling: 3, used: 3, paused: true });
+		expect((await instance.state(context)).marking).toStrictEqual({ [counted.id]: [3] });
+		await instance.raiseStartLimit(4, context);
+		await process.settle();
+		expect((await instance.state(context)).marking).toStrictEqual({ [counted.id]: [4] });
+		expect(disk.reports()).toStrictEqual([]);
 	});
 
 	test("refuses a net with problems, which is a bug in the caller, and names every problem", () => {
 		const broken = { ...contested, transitions: [...contested.transitions, ...contested.transitions] };
 		expect(() => createRuntime({ ...contestedOptions(definitionOrder, createClock()), net: broken })).toThrow(
-			new Error("invalid net: take-left: id used 2 times; take-right: id used 2 times"),
+			new Error(
+				"invalid net: take-left:busy: id used 2 times; take-left:result: id used 2 times; take-right:busy: id used 2 times; take-right:result: id used 2 times; take-left: id used 2 times; take-left:done: id used 2 times; take-right: id used 2 times; take-right:done: id used 2 times",
+			),
 		);
 	});
 
@@ -183,15 +195,19 @@ describe("createRuntime, examples", () => {
 		await expect(instance.enqueue(batch, context)).rejects.toThrow(problems);
 	});
 
-	test("rejects an enqueue whose net throws, and commits nothing", async () => {
+	test("an invalid plain output faults settlement and preserves the reserved binding", async () => {
 		const takeLeftBroken = {
 			...move("take-left", ready, left),
 			outputs: [{ place: left, expression: () => ["j9"] }],
 		};
-		const { disk, instance } = await opened({ net: { ...contested, transitions: [takeLeftBroken] } });
-		await expect(instance.enqueue(batch, context)).rejects.toThrow(TypeError);
-		expect(disk.history()).toStrictEqual([]);
-		expect(await instance.state(context)).toStrictEqual({ marking: {}, log: [] });
+		const { disk, process, instance } = await opened({ net: { ...contested, transitions: [takeLeftBroken] } });
+		await instance.enqueue(batch, context);
+		const reserved = await instance.state(context);
+		await process.settle();
+		expect(disk.reports()).toHaveLength(2);
+		expect(disk.reports().every((error) => error instanceof TypeError)).toBe(true);
+		expect(await instance.state(context)).toStrictEqual(reserved);
+		expect(await instance.inFlight(context)).toHaveLength(2);
 	});
 
 	test("rejects an enqueue whose policy names a transition outside the net, and commits nothing", async () => {

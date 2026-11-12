@@ -6,7 +6,7 @@ import { delayFaultProperty } from "../../packages/runtime/test/delay-properties
 import { createEarlyDueRuntime } from "../../fixtures/simulation/early-due-runtime.ts";
 import { createLostDueRuntime } from "../../fixtures/simulation/lost-due-runtime.ts";
 import { createFromRunRuntime } from "../../fixtures/simulation/from-run-runtime.ts";
-import { abortFaultProperty } from "../../packages/runtime/test/abort-properties.ts";
+import { abortFaultProperty, sleepingAbortProperty } from "../../packages/runtime/test/abort-properties.ts";
 import { createDueOnAbortRuntime } from "../../fixtures/simulation/due-on-abort-runtime.ts";
 import { createLostAbortRuntime } from "../../fixtures/simulation/lost-abort-runtime.ts";
 import { createWrongTaskAbortRuntime } from "../../fixtures/simulation/wrong-task-abort-runtime.ts";
@@ -81,7 +81,7 @@ test("the fault property finds the runtime that records a result under a request
 	});
 });
 
-test("the outage finds the runtime whose handler task ends faulted when its handler throws", async () => {
+test("the outage finds the runtime that drops the authored task's explicit retry", async () => {
 	const result = await fc.check(handlerFaultProperty(createUncaughtThrowRuntime));
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
@@ -127,15 +127,15 @@ test("an abort finds the runtime whose aborted task ends without its result", as
 	const result = await fc.check(abortFaultProperty(createLostAbortRuntime));
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
-		reason: propertyVerdict,
+		reason: "Error: settlement lost or replaced the native worker's result",
 	});
 });
 
 test("an abort of a sleeping task finds the runtime that records the delayed result instead", async () => {
-	const result = await fc.check(abortFaultProperty(createDueOnAbortRuntime));
+	const result = await fc.check(sleepingAbortProperty(createDueOnAbortRuntime));
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
-		reason: propertyVerdict,
+		reason: "Error: settlement lost or replaced the native worker's result",
 	});
 });
 

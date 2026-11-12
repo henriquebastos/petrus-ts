@@ -18,9 +18,9 @@ handlers, a choice made by handler results, one end place, and cancellation by t
   the shop to release the reservation and refund the payment, those that were made. Then `[order, "cancelled"]`
   goes on `Done`.
 
-The host cancels an order by aborting its operations in flight (see
-[aborts.md](../../../packages/runtime/docs/aborts.md)). An abort can land after the shop did the work and before
-its reply counted. Then the side's variant is `aborted`, but the reservation or the payment exists. So `Undo`
+The host requests cancellation by aborting operations in flight (see
+[aborts.md](../../../packages/runtime/docs/aborts.md)). Native side tasks return an explicit `aborted` result when cancellation wins.
+An abort can land after the shop did the work and before its task chose completion. The reservation or payment can exist despite that result. So `Undo`
 asks the shop to undo both sides of the order, whatever their variants said, and the shop's undo is keyed by the
 order, so a second run does nothing more.
 
@@ -50,8 +50,9 @@ checked by hand, with no planted defect kept.
 
 ## 3 Limits
 
-- A cancel that comes after both sides ended is too late: the sides are no longer in flight, so the order ships
-  when both succeeded. An abort that races the end of a side returns `terminal`.
+- A marked cancellation does not replace success already chosen by a native task. The order can still ship when both sides succeeded.
+- `Split` and `Ship` also execute asynchronously. Pre-launch cancellation creates no worker and retains the binding.
+  The tests explicitly resolve terminal operations without results. A host must choose that recovery result rather than assume automatic compensation.
 - The shop's work stops at a crash in these tests, because Durable aborts each run's signal when its process
   closes. A real remote call can finish after its process died, and so after the next process's `Undo`. Then a
   cancelled order keeps a reservation or a payment. A fence keyed by the order prevents this, as for the resources

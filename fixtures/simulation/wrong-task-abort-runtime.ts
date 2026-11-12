@@ -6,6 +6,7 @@ import { createRuntime } from "../../packages/runtime/src/index.ts";
 export function createWrongTaskAbortRuntime(options: RuntimeOptions): Runtime {
 	const runtime = createRuntime(options);
 	return {
+		net: runtime.net,
 		extension: runtime.extension,
 		instance: (host, conversationId) => {
 			const instance = runtime.instance(host, conversationId);

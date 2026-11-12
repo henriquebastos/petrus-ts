@@ -2,17 +2,17 @@
 
 Petrus runs coloured Petri nets as durable programs. Its aim is to coordinate outside work, such as AI agents and
 the services they call, as a net: each piece of work is a handler transition, and the log is one timeline of every
-change. A host adds tokens from outside under a request id. The
-commit that adds them steps the net until the selection policy picks nothing, and holds the new marking with the
-occurrences of its steps. It runs on Pi Durable (`@earendil-works/pi-durable`), the durable task and document
+change. A host adds tokens from outside under a request id. The admission commit reserves enabled bindings with
+coordinators. Owned native tasks execute the work, and terminal results release outputs in later commits.
+It runs on Pi Durable (`@earendil-works/pi-durable`), the durable task and document
 library of [Pi](https://github.com/earendil-works/pi). The [Python Petrus](https://github.com/henriquebastos/petrus)
 is a separate implementation; nothing is ported from it.
 
 ## Status
 
 Early, not released. `petri-net` has coloured nets, bindings with input arc expressions, Jensen steps and
-selection policies. `runtime` runs net instances on Pi Durable 1.4.0: enqueues under request ids, handler
-transitions as Durable tasks, delayed results, host aborts, and a faulted task when a stored instance is broken.
+selection policies. `runtime` runs net instances on Pi Durable 1.4.0: request-id admission, owned native execution,
+task-defined cancellation and sleeps, terminal result settlement, and a durable authored-start budget.
 The clock is a seam. Two examples run on it, with count budgets for scale. Every quality gate has a planted defect
 in `fixtures/` and a test in `test/gates/` that shows the gate still fails on it.
 

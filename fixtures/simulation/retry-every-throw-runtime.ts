@@ -1,31 +1,17 @@
-// Planted defect: an operation run retries every throw, also a broken net instance that throws again on each run,
-// so the task never ends: it reports the same bug after each retry delay, for ever.
+// Planted defect: coordinator settlement retries a broken stored instance forever.
 import type { Runtime, RuntimeOptions } from "../../packages/runtime/src/index.ts";
-import { createRuntime, withHandlers } from "../../packages/runtime/src/index.ts";
-import { createOperationRun } from "../../packages/runtime/src/operation-run.ts";
-import { createNetInstanceCache } from "../../packages/runtime/src/net-instance-cache.ts";
+import { nativeFixture } from "./native-fixture.ts";
 
 export function createRetryEveryThrowRuntime(options: RuntimeOptions): Runtime {
-	const runtime = createRuntime(options);
-	const handlers = options.handlers ?? [];
-	const net = withHandlers(options.net, handlers.map((handler) => handler.transition));
-	const handlerIds = new Set(handlers.map((handler) => handler.transition.id));
-	const real = createOperationRun({ ...options, cache: createNetInstanceCache(`${options.nonce}:fixture`), net, handlerIds, handlers });
-	const task: typeof real.task = {
-		definition: {
-			...real.task.definition,
-			phases: {
-				...real.task.definition.phases,
-				run: async (running, taskRuntime, context) => {
-					try {
-						await real.task.definition.phases.run(running, taskRuntime, context);
-					} catch (error: unknown) {
-						taskRuntime.report(error);
-						await taskRuntime.sleepUntil(taskRuntime.now() + options.retryDelayMs, { phase: "run" }, context);
-					}
-				},
-			},
+	const { runtime, task } = nativeFixture(options);
+	const broken: typeof task = { definition: { ...task.definition, phases: { ...task.definition.phases,
+		settle: async (running, taskRuntime, context) => {
+			try { await task.definition.phases.settle(running, taskRuntime, context); }
+			catch (error) {
+				taskRuntime.report(error);
+				await taskRuntime.sleepUntil(taskRuntime.now() + 10, running.state.checkpoint, context);
+			}
 		},
-	};
-	return { extension: { name: runtime.extension.name, tasks: [task] }, instance: runtime.instance };
+	} } };
+	return { ...runtime, extension: { ...runtime.extension, tasks: [broken, ...(runtime.extension.tasks ?? []).slice(1)] } };
 }

@@ -19,8 +19,8 @@ const budgets: Readonly<Record<string, Budget>> = {
 		maxFiles: 15,
 		forbid: [/^node:/, /node_modules\//, /^packages\/(?!petri-net\/)/],
 	},
-	// The engine adds six modules; the instance cache and ingress buckets add two more.
-	"packages/runtime/src/index.ts": { maxFiles: 28, forbid: [/^node:/] },
+	// Native coordination replaces operation-run; execution and the pure adapter add two value modules.
+	"packages/runtime/src/index.ts": { maxFiles: 30, forbid: [/^node:/] },
 	// Display roots reach the six indexed-engine modules through the public petri-net root.
 	"packages/net-view-model/src/index.ts": { maxFiles: 19, forbid: [/^node:/, /^packages\/runtime\//] },
 	"packages/net-layout/src/index.ts": { maxFiles: 2, forbid: [/^node:/, /^packages\/runtime\//] },

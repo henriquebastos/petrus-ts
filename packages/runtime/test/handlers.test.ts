@@ -15,7 +15,7 @@ import {
 } from "@petrus/petri-net";
 import { describe, expect, onTestFinished, test } from "vitest";
 import type {
-	Handler,
+	Execution,
 	HandlerTransition,
 	Ingress,
 	NetInstance,
@@ -56,6 +56,7 @@ import {
 	work,
 } from "./handler-properties.ts";
 import { lastState } from "./properties.ts";
+import { immediateExecution } from "./native-execution.ts";
 
 const busy = busyPlaceId(work.id);
 const result = resultPlaceId(work.id);
@@ -352,7 +353,7 @@ describe("operations", () => {
 		expect(
 			hostBatchProblems(handlerIds, { requestId: "result:work/0", tokens: { [busy]: [], [result]: [] } }),
 		).toStrictEqual([
-			'the request id starts with "result:", which the runtime keeps for handler results',
+			"the request id uses a prefix reserved for results or start-limit increases",
 			"place work:busy is filled only by the runtime",
 			"place work:result is filled only by the runtime",
 		]);
@@ -373,7 +374,7 @@ describe("createRuntime with handlers, examples", () => {
 		expect(await instance.inFlight(context)).toStrictEqual([operation]);
 		const { tasks } = await process.harness.inspect(context);
 		expect(tasks.map(({ record }) => [record.kind, record.input])).toStrictEqual([
-			["petrus.operation:jobs", { ...operation, startedAt: 5 }],
+			["petrus.coordinator.native-v1:jobs", { ...operation, startedAt: 5 }],
 		]);
 		expect(service.calls().size).toBe(0);
 		await process.settle();
@@ -421,14 +422,11 @@ describe("createRuntime with handlers, examples", () => {
 			},
 		};
 		const ran: string[] = [];
-		const otherHandler: Handler<"j"> = {
-			transition: other,
-			run: (started, { operationId }) => {
-				ran.push(operationId);
-				return Promise.resolve({ variant: "done", value: started.j });
-			},
-		};
-		const { process, instance, service } = await opened((jobs) => ({ handlers: [otherHandler, jobs.handler] }));
+		const otherHandler = immediateExecution(other, ({ binding, id }) => {
+			ran.push(id);
+			return Promise.resolve({ variant: "done", value: binding.j ?? null });
+		});
+		const { process, instance, service } = await opened((jobs) => ({ executions: [otherHandler, jobs.execution] }));
 		await instance.enqueue(firstBatch(["j1"]), context);
 		await process.settle();
 		expect(ran).toStrictEqual(["other/4"]);
@@ -465,42 +463,55 @@ describe("createRuntime with handlers, examples", () => {
 		}
 	});
 
-	test("a handler's throw is reported, and the operation stays in flight and runs again after retryDelayMs", async () => {
+	test("an uncaught native throw is reported once and holds the binding without retrying", async () => {
 		const clock = createClock(100);
 		const runs: number[] = [];
-		const flaky = (service: Service): Handler => ({
-			transition: work,
-			run: (started, handlerContext) => {
-				runs.push(clock.now());
-				return runs.length === 1
-					? Promise.reject(new Error("the service is down"))
-					: service.handler.run(started, handlerContext);
-			},
+		const flaky = immediateExecution(work, () => {
+			runs.push(clock.now());
+			return Promise.reject(new Error("the service is down"));
 		});
-		const { disk, process, instance } = await opened((service) => ({ handlers: [flaky(service)] }), clock);
+		const { disk, process, instance } = await opened(() => ({ executions: [flaky] }), clock);
 		await instance.enqueue(firstBatch(["j1"]), context);
 		await process.runReady();
 		expect(disk.reports()).toStrictEqual([new Error("the service is down")]);
 		expect(await instance.inFlight(context)).toStrictEqual([operation]);
-		expect(process.harness.wake()).toStrictEqual({ active: false, at: 110 });
 		await process.settle();
-		expect(runs).toStrictEqual([100, 110]);
-		expect((await instance.state(context)).marking[finished.id]).toStrictEqual(["j1"]);
+		expect(runs).toStrictEqual([100]);
+		expect((await instance.state(context)).marking).toStrictEqual({ [slots.id]: ["slot"], [busy]: [binding] });
+		expect(disk.reports()).toHaveLength(1);
 	});
 
-	test("a task whose transition has no handler, as after the host dropped it, is reported and runs again after retryDelayMs", async () => {
+	test("a native task catches its expected outage and explicitly sleeps before retrying", async () => {
+		const { disk, process, instance, service } = await opened(undefined, createClock(100));
+		await instance.enqueue(firstBatch(["j2"]), context);
+		await process.runReady();
+		expect([...service.calls()]).toStrictEqual([["work/1", 1]]);
+		expect(await instance.inFlight(context)).toHaveLength(1);
+		expect(process.harness.wake()).toStrictEqual({ active: false, at: 110 });
+		await process.settle();
+		expect([...service.calls()]).toStrictEqual([["work/1", 2]]);
+		expect((await instance.state(context)).marking).toStrictEqual({
+			[slots.id]: ["slot", "slot"],
+			[finished.id]: ["j2"],
+			[receipts.id]: ['receipt "j2" run 2'],
+		});
+		expect(disk.reports()).toStrictEqual([]);
+	});
+
+	test("a coordinator whose execution was removed faults once without starting work", async () => {
 		const clock = createClock();
 		const service = createService(() => []);
 		const withHandler = createRuntime(jobsOptions(service, clock));
-		const withoutHandler = createRuntime({ ...jobsOptions(service, clock), handlers: [] });
+		const withoutHandler = createRuntime({ ...jobsOptions(service, clock), executions: [] });
 		const disk = createDisk([withoutHandler.extension], clock);
 		const process = await disk.open();
 		onTestFinished(() => process.harness.close(context));
 		const root = await process.harness.root(context);
 		await withHandler.instance(process.harness, root.id).enqueue(firstBatch(["j1"]), context);
 		await process.runReady();
-		expect(disk.reports()).toStrictEqual([new Error("no handler runs work")]);
-		expect(process.harness.wake()).toStrictEqual({ active: false, at: 10 });
+		expect(disk.reports()).toStrictEqual([new Error("no execution runs work")]);
+		await process.settle();
+		expect(disk.reports()).toHaveLength(1);
 		expect(service.calls().size).toBe(0);
 	});
 
@@ -510,10 +521,15 @@ describe("createRuntime with handlers, examples", () => {
 		return { settled: "settled", idle: true, reports, task: "faulted", commits: 0, inFlight };
 	}
 
-	test("a net that does not become quiet after a result ends the task faulted, reported once, and the operation stays in flight", async () => {
-		expect(await brokenRun(createRuntime, restlessJobsNet, afterEnqueue(undefined))).toStrictEqual(
-			faultedOnce("the net did not become quiet after 1000 steps", [operation]),
-		);
+	test("a cycle after a worker result pauses at the durable budget without faulting the worker", async () => {
+		const { disk, process, instance, service } = await opened(() => ({ net: restlessJobsNet, startLimit: 4 }));
+		await instance.enqueue(firstBatch(["j1"]), context);
+		await process.settle();
+		expect(await instance.budget(context)).toStrictEqual({ ceiling: 4, used: 4, paused: true });
+		expect(await instance.inFlight(context)).toStrictEqual([]);
+		expect((await instance.state(context)).marking[finished.id]).toStrictEqual(["j1"]);
+		expect([...service.calls()]).toStrictEqual([["work/1", 1]]);
+		expect(disk.reports()).toStrictEqual([]);
 	});
 
 	test("a stored log that names no started operation ends the task faulted, reported once, with nothing committed", async () => {
@@ -552,23 +568,23 @@ describe("createRuntime with handlers, examples", () => {
 		expect(await instance.inFlight(context)).toStrictEqual([operation]);
 	});
 
-	test("aborting a task while its handler runs ends it as aborted, records no result and reports nothing", async () => {
+	test("a marked coordinator abort preserves the success its native worker chose before cancellation reached it", async () => {
 		let entered = (): void => undefined;
 		let finish = (): void => undefined;
 		const running = new Promise<void>((resolve) => {
 			entered = resolve;
 		});
-		const slow: Handler<"j" | "s"> = {
-			transition: work,
-			run: () =>
+		const slow: Execution = immediateExecution(
+			work,
+			() =>
 				new Promise((resolve) => {
 					finish = () => {
-						resolve({ variant: "done", value: "late" });
+						resolve({ variant: "done", value: "receipt late" });
 					};
 					entered();
 				}),
-		};
-		const { disk, process, instance } = await opened(() => ({ handlers: [slow] }));
+		);
+		const { disk, process, instance } = await opened(() => ({ executions: [slow] }));
 		await instance.enqueue(firstBatch(["j1"]), context);
 		process.harness.resume();
 		await running;
@@ -585,7 +601,12 @@ describe("createRuntime with handlers, examples", () => {
 			outcome: { status: "aborted" },
 		});
 		expect(disk.reports()).toStrictEqual([]);
-		expect(await instance.inFlight(context)).toStrictEqual([operation]);
+		expect(await instance.inFlight(context)).toStrictEqual([]);
+		expect((await instance.state(context)).marking).toStrictEqual({
+			[slots.id]: ["slot", "slot"],
+			[finished.id]: ["j1"],
+			[receipts.id]: ["receipt late"],
+		});
 	});
 
 	test("refuses a host batch that uses a result request id or fills a place the runtime owns, and commits nothing", async () => {
@@ -594,7 +615,7 @@ describe("createRuntime with handlers, examples", () => {
 			instance.enqueue({ requestId: "result:work/0", tokens: { [busy]: [{ j: "j1", s: "slot" }] } }, context),
 		).rejects.toThrow(
 			new Error(
-				'invalid batch result:work/0: the request id starts with "result:", which the runtime keeps for handler results; place work:busy is filled only by the runtime',
+				"invalid batch result:work/0: the request id uses a prefix reserved for results or start-limit increases; place work:busy is filled only by the runtime",
 			),
 		);
 		expect(disk.history()).toStrictEqual([]);

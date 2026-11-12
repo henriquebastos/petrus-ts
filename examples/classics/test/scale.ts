@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Context } from "@earendil-works/chord";
 import { createModels } from "@earendil-works/pi-ai";
-import type { Seq, StorageWrite } from "@earendil-works/pi-durable";
+import type { Seq, StorageWrite, TaskId } from "@earendil-works/pi-durable";
 import { createRegistry, Harness, MemoryStorage } from "@earendil-works/pi-durable";
 import type { Marking, Net, Token, Transition } from "@petrus/petri-net";
 import { definitionOrder } from "@petrus/petri-net";
-import type { Handler, NetInstanceState } from "@petrus/runtime";
+import type { Execution, NetInstanceState } from "@petrus/runtime";
 import { createRuntime } from "@petrus/runtime";
 import { diningPhilosophers, diningPhilosophersHandlers, initialMarking as table } from "../src/dining-philosophers.ts";
 import { initialMarking as orders, orderProcess, orderProcessHandlers } from "../src/order-process.ts";
@@ -25,6 +25,10 @@ export type ScaleRun = {
 	/** The size of the JSON of the final net-instance state, in bytes. */
 	readonly stateBytes: number;
 	readonly stateHashes: readonly string[];
+	readonly taskCount: number;
+	readonly net: Net;
+	readonly state: NetInstanceState;
+	readonly states: readonly NetInstanceState[];
 	readonly work: readonly { readonly guards: number; readonly tokenKeys: number }[];
 };
 
@@ -54,16 +58,20 @@ export function runAtScale(
 /** Memory storage that records the size of each commit. */
 class CountingStorage extends MemoryStorage {
 	readonly writes: number[] = [];
+	readonly taskIds = new Set<TaskId>();
 
 	override commit(writes: readonly StorageWrite[], commitContext: Context): Promise<Seq> {
 		this.writes.push(JSON.stringify(writes).length);
+		for (const write of writes) {
+			if (write.type === "task") this.taskIds.add(write.value.id);
+		}
 		return super.commit(writes, commitContext);
 	}
 }
 
 async function runToQuiet(
 	net: Net,
-	handlers: readonly Handler[],
+	executions: readonly Execution[],
 	tokens: Marking,
 	probe: ScaleProbe,
 ): Promise<ScaleRun> {
@@ -80,8 +88,8 @@ async function runToQuiet(
 		net: { ...net, transitions: net.transitions.map(countGuard) },
 		policy: definitionOrder,
 		clock,
-		handlers: handlers.map((handler) => ({ ...handler, transition: countGuard(handler.transition) })),
-		retryDelayMs: 0,
+		executions: executions.map((registered) => ({ ...registered, transition: countGuard(registered.transition) })),
+		startLimit: Object.values(tokens).reduce((total, values) => total + values.length, 0) * 4,
 		nonce: randomUUID(),
 	};
 	const runtime = createRuntime(options);
@@ -93,6 +101,7 @@ async function runToQuiet(
 		const root = await harness.root(context);
 		const instance = runtime.instance(harness, root.id);
 		const stateHashes: Promise<string>[] = [];
+		const states: Promise<NetInstanceState>[] = [];
 		const work: { readonly guards: number; readonly tokenKeys: number }[] = [];
 		probe.takeTokenKeys();
 		harness.subscribeCommits((publication) => {
@@ -104,7 +113,9 @@ async function runToQuiet(
 			guards = 0;
 			if (probe.recordStates) {
 				const committed = JSON.stringify({ marking: change.value.marking, log: change.value.log });
-				stateHashes.push(instance.state(context).then((state) => hashState(state, committed)));
+				const state = instance.state(context);
+				states.push(state);
+				stateHashes.push(state.then((state) => hashState(state, committed)));
 			}
 		});
 		await instance.enqueue({ requestId: "first", tokens }, context);
@@ -112,6 +123,10 @@ async function runToQuiet(
 		const state = await instance.state(context);
 		return {
 			writes: storage.writes,
+			taskCount: storage.taskIds.size,
+			net: runtime.net,
+			state,
+			states: await Promise.all(states),
 			logLength: state.log.length,
 			stateBytes: JSON.stringify(state).length,
 			stateHashes: await Promise.all(stateHashes),

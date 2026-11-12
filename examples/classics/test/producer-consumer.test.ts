@@ -45,8 +45,8 @@ function runtimeOf(shop: Workshop): Runtime {
 		net: producerConsumer,
 		policy: definitionOrder,
 		clock,
-		handlers: producerConsumerHandlers(shop),
-		retryDelayMs: 0,
+		executions: producerConsumerHandlers(shop),
+		startLimit: 100,
 	});
 }
 

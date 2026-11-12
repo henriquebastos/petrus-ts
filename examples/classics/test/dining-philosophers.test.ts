@@ -70,8 +70,8 @@ function runtimeOf(size: number, table: Table): Runtime {
 		net: diningPhilosophers,
 		policy: definitionOrder,
 		clock,
-		handlers: diningPhilosophersHandlers(size, table),
-		retryDelayMs: 0,
+		executions: diningPhilosophersHandlers(size, table),
+		startLimit: 100,
 	});
 }
 
