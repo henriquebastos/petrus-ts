@@ -66,7 +66,10 @@ test("the fault property finds the runtime that runs a handler before the commit
 });
 
 test("a crash finds the runtime that creates the tasks of new operations in a second commit", async () => {
-	const result = await fc.check(handlerFaultProperty(createLateTaskRuntime));
+	// Only a crash between the enqueue's two commits shows the defect: 2 of the 130 faults, so random runs can miss it.
+	const result = await fc.check(handlerFaultProperty(createLateTaskRuntime), {
+		examples: [[["j1"], { kind: "crashAfterCommit", commit: 1 }]],
+	});
 	expect({ failed: result.failed, reason: String(result.errorInstance) }).toStrictEqual({
 		failed: true,
 		reason: propertyVerdict,
