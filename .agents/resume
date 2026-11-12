@@ -10,3 +10,12 @@ fi
 # Dependencies persist in the snapshot. Resume checks them without installing.
 test "$(node --version)" = "v$(cat .node-version)"
 test -d node_modules
+# A package removed upstream leaves its ignored node_modules behind when the checkout updates. pnpm skips a folder
+# with no package.json, so delete one that holds nothing else.
+shopt -s nullglob
+for folder in packages/*/ examples/*/; do
+  if [[ "$(ls -A "$folder")" == node_modules ]]; then
+    echo "Removing stale $folder"
+    rm -rf "$folder"
+  fi
+done
