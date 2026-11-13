@@ -72,7 +72,8 @@ so the audit skips those parts.
 `pnpm periodic` runs StrykerJS on `packages/petri-net/src` and `packages/runtime/src`. It fails below a
 mutation score of 100: each surviving mutant needs a test, or a reasoned Stryker disable comment when it is equivalent.
 It keeps an incremental file in `reports/mutation/`, which git ignores. A full run, as on a fresh clone and its
-first push, takes about 30 minutes; a later run tests only the mutants that a change affects.
+first push, takes about 30 to 50 minutes; a later run tests only the mutants that a change affects, in about a minute.
+In an orb, `.agents/setup` keeps that file current in the project snapshot, 10 minutes of Stryker per setup at most.
 
 `pnpm install` installs the Husky hooks in `.husky/`. `pre-commit` runs `pnpm feedback`. `pre-push` runs
 `pnpm inspect` on the commits the push sends, then `pnpm periodic`. It skips `periodic` when those commits change

@@ -34,3 +34,26 @@ echo "Installing locked dependencies"
 SECONDS=0
 pnpm install --frozen-lockfile
 echo "Dependencies ready in ${SECONDS}s"
+
+# The pre-push hook runs `pnpm periodic`, which takes about 50 minutes on a 2-CPU orb without Stryker's incremental
+# file, and under a minute with a current one. Setup runs again on top of the last snapshot after each commit to main,
+# and the snapshot keeps reports/, so setup keeps that file current for the next orb. A cold run stops after the time
+# budget; Stryker saves the results so far on SIGINT, and the next setup continues from them. The marker names the
+# commit of the last complete run, so commits that change no mutation input skip Stryker (scripts/mutation-inputs.ts).
+echo "Warming Stryker's incremental file"
+SECONDS=0
+marker=reports/mutation/stryker-incremental.commit
+head="$(git rev-parse HEAD)"
+if [[ -f "$marker" && "$(node scripts/mutation-inputs.ts "$(cat "$marker")" "$head" 2>/dev/null || true)" == skip ]]; then
+  echo "No mutation input changed since $(cat "$marker")"
+else
+  status=0
+  timeout -s INT 600 node_modules/.bin/stryker run --reporters progress-append-only || status=$?
+  case "$status" in
+    0) echo "$head" > "$marker" ;;
+    124) echo "Stopped at the 10-minute budget; the next setup continues from the saved results" ;;
+    # A cache step must not fail setup: Amp would then publish no snapshot at all.
+    *) echo "Stryker exited with $status; continuing without a complete incremental file" ;;
+  esac
+fi
+echo "Stryker ready in ${SECONDS}s"
