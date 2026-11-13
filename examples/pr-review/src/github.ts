@@ -118,7 +118,7 @@ export type GitHub = {
 };
 
 /** Calls `gh api` with `input` as the JSON body, and parses the response with `schema`. */
-async function ghApi<T extends TSchema>(
+export async function ghApi<T extends TSchema>(
 	gh: Gh,
 	schema: T,
 	args: readonly string[],

@@ -9,7 +9,8 @@
 	"scripts": {
 		"record": "node src/main.ts",
 		"live": "node src/live.ts",
-		"petrus": "node src/cli.ts"
+		"petrus": "node src/cli.ts",
+		"test-pr": "node src/test-pr-cli.ts"
 	},
 	"dependencies": {
 		"@earendil-works/chord": "1.4.0",

@@ -136,6 +136,17 @@ The model request allows two SDK retries. Other errors fault the task and hold i
 Test: `test/host.test.ts` "a failed review holds memory and publishes nothing, while new heads are still adopted".
 The host has no resolve command: after a fault, continue in a new state directory.
 
+### Test pull requests
+
+`pnpm --filter @petrus/example-pr-review test-pr open` opens a pull request in this repository with revision A of
+the fixed sample in `src/test-pr.ts`. It writes through the GitHub API, not a local checkout.
+`test-pr push <URL> B` (or `C`) adds a revision, and `test-pr close <URL>` closes the pull request and deletes its
+branch. Both refuse branches without the `petrus-review-test/` prefix.
+Test: `test/test-pr.test.ts` "a test pull request starts at revision A on the default branch, takes B and C on top, and closes with its branch".
+
+To see a withheld review, kill the host while A is under review, push B, and restart: the first poll admits B
+before A's review settles.
+
 ## 1f Limits
 
 One fresh instance represents one PR. Ordered observations use consecutive admission numbers, not Git ancestry.
