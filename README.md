@@ -75,7 +75,8 @@ It keeps an incremental file in `reports/mutation/`, which git ignores. A full r
 first push, takes about 30 minutes; a later run tests only the mutants that a change affects.
 
 `pnpm install` installs the Husky hooks in `.husky/`. `pre-commit` runs `pnpm feedback`. `pre-push` runs
-`pnpm inspect` on the commits the push sends, then `pnpm periodic`.
+`pnpm inspect` on the commits the push sends, then `pnpm periodic`. It skips `periodic` when those commits change
+no package and no Stryker, Vitest, TypeScript or dependency file (`scripts/mutation-inputs.ts`).
 
 ## TypeScript versions
 

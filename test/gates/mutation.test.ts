@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { Type } from "typebox";
+import { mutationInputsChanged } from "../../scripts/mutation-inputs.ts";
 import { readJson, repoRoot, runTool, sandbox } from "./tools.ts";
 
 const mutant = Type.Object({
@@ -43,4 +44,26 @@ test("Stryker reports the untested boundary Survived, the untested function NoCo
 	expect(outcomes).toStrictEqual(
 		readJson(join(repoRoot, "fixtures", "mutation", "expected.json"), Type.Array(Type.String())),
 	);
+});
+
+test("the pre-push hook skips mutation testing only for commits that change no package, Stryker, Vitest, TypeScript or dependency file", () => {
+	const outside = ["README.md", "examples/pr-review/src/host.ts", "test/gates/docs.test.ts", "scripts/check-docs.ts"];
+	expect(mutationInputsChanged(outside)).toBe(false);
+	expect(mutationInputsChanged([])).toBe(false);
+	const inputs = [
+		"packages/runtime/src/runtime.ts",
+		"packages/net-view-model/test/project.test.ts",
+		"stryker.config.json",
+		"vitest.config.ts",
+		"vitest.mutation.config.ts",
+		"tsconfig.base.json",
+		"tsconfig.mutation.json",
+		"test/mutation-seed.ts",
+		"package.json",
+		"pnpm-lock.yaml",
+		"pnpm-workspace.yaml",
+		".node-version",
+	];
+	for (const path of inputs) expect(mutationInputsChanged([...outside, path]), path).toBe(true);
+	expect(mutationInputsChanged(["examples/pr-review/package.json", "examples/pr-review/tsconfig.json"])).toBe(false);
 });

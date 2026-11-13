@@ -1,10 +1,18 @@
 # git writes one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>. Fallow audits the
 # commits since the remote sha, so the push is checked, not only uncommitted files. A new remote branch has
 # an all-zero sha; then Fallow keeps its default base, local main. Only the first ref sets the base.
-read -r _local_ref _local_sha _remote_ref remote_sha || true
+read -r _local_ref local_sha _remote_ref remote_sha || true
 if [ -n "$remote_sha" ] && [ "$remote_sha" != "0000000000000000000000000000000000000000" ]; then
 	export FALLOW_AUDIT_BASE="$remote_sha"
 fi
 # A surviving mutant fails the push: add a test, or mark an equivalent mutant with a reasoned Stryker disable comment.
 for name in $(env | sed -n 's/^\(GIT_[A-Z_]*\)=.*/\1/p'); do unset "$name"; done
-pnpm inspect && pnpm periodic
+pnpm inspect
+# A full Stryker run takes about 30 minutes without the incremental file, which a fresh clone or orb lacks. Commits
+# that change nothing Stryker reads cannot change the score, so the hook skips it. Without a remote sha, or when the
+# check fails and prints nothing, it runs.
+if [ -n "$remote_sha" ] && [ "$(node scripts/mutation-inputs.ts "$remote_sha" "$local_sha")" = skip ]; then
+	echo "pre-push: the pushed commits change no mutation input; skipping pnpm periodic"
+else
+	pnpm periodic
+fi

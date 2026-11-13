@@ -33,7 +33,8 @@ Read `README.md` first. Then read the doc for the topic you change, in full:
 - Run `pnpm format` to format. Do not format by hand.
 - A change to a package's public API fails `lint:api`. If the change is intended, run `pnpm lint:api --update` and commit the report diff in `packages/*/api/`.
 - The pre-commit hook runs `pnpm feedback`, and the pre-push hook runs `pnpm inspect` (CRAP and duplication on the pushed
-  commits) and `pnpm periodic` (mutation testing, break score 100). Do not skip them with `--no-verify`.
+  commits) and `pnpm periodic` (mutation testing, break score 100), unless the pushed commits change nothing that
+  mutation testing reads. Do not skip them with `--no-verify`.
   Run `pnpm periodic` yourself after a change to `packages/*/src`, and read the surviving mutants.
 
 ## Docs
