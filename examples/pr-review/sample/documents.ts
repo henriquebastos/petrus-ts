@@ -3,12 +3,12 @@ export type Document = { readonly id: string; readonly tenant: string; readonly 
 
 /** Read access: administrators of the document's own tenant. */
 export function canRead(user: User, document: Document): boolean {
-	return user.admin || user.tenant === document.tenant;
+	return user.admin && user.tenant === document.tenant;
 }
 
 /** Returns page `number` of `items`, `size` items per page. Pages count from 1. */
 export function page<T>(items: readonly T[], number: number, size: number): readonly T[] {
-	const start = number * size;
+	const start = (number - 1) * size;
 	return items.slice(start, start + size);
 }
 
