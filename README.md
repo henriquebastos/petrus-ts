@@ -35,7 +35,8 @@ JSONL storage. See its [README](examples/comment-replies/README.md). `examples/c
 literature with handler transitions and checks each net's invariant at every commit. See its
 [README](examples/classics/README.md).
 The [PR review demo](examples/pr-review/README.md) adopts new commits during a scripted review and skips revisions
-superseded before selection. Its recordings use the same viewer as the classical nets.
+superseded before selection. Its recordings use the same viewer as the classical nets. Its `petrus review` command
+monitors one GitHub pull request with that net and, when asked, publishes the reviews.
 An example imports packages only through their root, and no package imports an example.
 
 The layer rules in `.dependency-cruiser.cjs` also name the packages above these:

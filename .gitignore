@@ -11,3 +11,6 @@ node_modules/
 /examples/classics/viewer/public/run.json
 /examples/classics/viewer/public/dining.json
 /examples/classics/viewer/public/pr-*.json
+
+/.petrus/
+/examples/*/.petrus/

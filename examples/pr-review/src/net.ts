@@ -12,7 +12,7 @@ export const Work = Type.Object({ c: Revision, m: Memory });
 export type ReviewWork = Readonly<Static<typeof Work>>;
 export type ReviewFindings = Static<typeof Findings>;
 
-function colour(name: string, schema: TSchema): ColourSet {
+export function colour(name: string, schema: TSchema): ColourSet {
 	return { name, contains: (token) => Value.Check(schema, token) };
 }
 

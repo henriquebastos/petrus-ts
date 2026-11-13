@@ -4,7 +4,8 @@
 	// CRAP needs measured coverage. Tests, scripts and root configs have none (scripts run in gate-test
 	// subprocesses), and Fallow's estimate would flag them, so CRAP checks only the src folders of packages and examples. ESLint's complexity
 	// limit covers them all. maxCrap 10 keeps the old rule (CRAP 30 at complexity 10) at the complexity limit of 5:
-	// a function at the limit fails below about 42% coverage. An example's main.ts runs only in a child process.
+	// a function at the limit fails below about 42% coverage. An example's main.ts runs only in a child process,
+	// and its *cli.ts roots need the user's gh login or a model key (vitest.config.ts).
 	"health": {
 		"maxCrap": 10,
 		"coverage": "coverage/coverage-final.json",
@@ -16,6 +17,7 @@
 			"eslint.config.js",
 			"vitest*.config.ts",
 			"examples/*/src/main.ts",
+			"examples/*/src/*cli.ts",
 			// This script drives a real browser. Istanbul cannot measure its child-process checks.
 			"examples/classics/verify-viewer.ts"
 		]
