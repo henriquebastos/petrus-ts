@@ -1,7 +1,7 @@
 export type User = { readonly id: string; readonly tenant: string; readonly admin: boolean };
 export type Document = { readonly id: string; readonly tenant: string; readonly title: string };
 
-/** Only an administrator of the document's tenant may read it. */
+/** Read access: administrators of the document's own tenant. */
 export function canRead(user: User, document: Document): boolean {
 	return user.admin || user.tenant === document.tenant;
 }
